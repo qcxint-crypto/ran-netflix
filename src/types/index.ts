@@ -1,0 +1,74 @@
+export interface AnimeCard {
+  title: string
+  slug: string
+  image: string
+  episode?: string
+  type?: string
+  rating?: string
+  status?: string
+}
+
+export interface AnimeDetail {
+  title: string
+  japanese?: string
+  image: string
+  synopsis: string
+  type?: string
+  status?: string
+  rating?: string
+  studio?: string
+  duration?: string
+  season?: string
+  genres: string[]
+  episodes: EpisodeItem[]
+  batchLinks?: BatchLink[]
+}
+
+export interface EpisodeItem {
+  title: string
+  slug: string
+  date?: string
+}
+
+export interface BatchLink {
+  label: string
+  url: string
+}
+
+export interface StreamingSource {
+  label: string
+  quality: string
+  server: number
+  src: string
+}
+
+export interface EpisodeData {
+  title: string
+  animeTitle?: string
+  animeSlug?: string
+  prevSlug?: string
+  nextSlug?: string
+  sources: StreamingSource[]
+}
+
+export interface Genre {
+  name: string
+  slug: string
+}
+
+export interface PaginatedResult<T> {
+  data: T[]
+  currentPage: number
+  hasNextPage: boolean
+}
+
+export interface ApiResponse<T> {
+  ok: boolean
+  data?: T
+  error?: string
+}
+
+export interface HomeData {
+  ongoing: AnimeCard[]
+  completed: AnimeCard[]
+}
