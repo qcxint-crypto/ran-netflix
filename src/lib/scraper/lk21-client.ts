@@ -144,6 +144,14 @@ export async function getLK21Detail(slug: string): Promise<LK21Detail> {
   const tmdbId = slug.replace('movie-', '')
   const data = await tmdbFetch<TMDBMovieDetail>(`/movie/${tmdbId}`)
 
+  let synopsis = data.overview || ''
+  if (!synopsis) {
+    try {
+      const enData = await tmdbFetch<TMDBMovieDetail>(`/movie/${tmdbId}?language=en-US`)
+      synopsis = enData.overview || ''
+    } catch {}
+  }
+
   const genres = (data.genres || []).map(g => g.name).join(', ')
   const year = data.release_date?.substring(0, 4)
 
@@ -156,7 +164,7 @@ export async function getLK21Detail(slug: string): Promise<LK21Detail> {
     title: data.title,
     image: data.backdrop_path ? `https://image.tmdb.org/t/p/original${data.backdrop_path}` :
       data.poster_path ? `${TMDB_IMG}${data.poster_path}` : '',
-    synopsis: data.overview || 'No synopsis available.',
+    synopsis: synopsis || 'No synopsis available.',
     year,
     genre: genres || undefined,
     rating: data.vote_average ? `${data.vote_average.toFixed(1)}` : undefined,
