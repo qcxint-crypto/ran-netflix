@@ -26,7 +26,8 @@ export async function GET(request: Request) {
         htmlLength: text.length,
         articleCount,
         hasCfChallenge,
-        headers: Object.fromEntries([...res.headers.entries()].filter(([k]) => k.startsWith('cf-') || k === 'server')),
+        server: res.headers.get('server'),
+        cfMitigated: res.headers.get('cf-mitigated'),
         first200: text.substring(0, 200),
       })
     } catch (e) {
