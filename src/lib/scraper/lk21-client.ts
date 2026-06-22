@@ -1,7 +1,7 @@
 import * as cheerio from 'cheerio'
 import type { StreamingSource } from '@/types'
 
-const LK21_BASE = 'https://lk21.org'
+const LK21_BASE = 'https://tv.lk21official.dev'
 const FETCH_TIMEOUT = 20000
 const MAX_RETRIES = 3
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
@@ -70,16 +70,17 @@ function parseMovieCards(html: string): LK21Movie[] {
 
   $('article').each((_, el) => {
     const $el = $(el)
-    const link = $el.find('figure > a').attr('href') || ''
+    const link = $el.find('a[itemprop="url"]').attr('href') || $el.find('figure a').attr('href') || ''
     const title = $el.find('.poster-title').text().trim()
     const image = $el.find('img[itemprop="image"]').attr('src') ||
-      $el.find('img').attr('data-src') || $el.find('img').attr('src') || ''
+      $el.find('source[type="image/jpeg"]').attr('srcset') ||
+      $el.find('img').attr('src') || ''
     const year = $el.find('.year').text().trim()
     const quality = $el.find('.label-HD, .label').text().trim()
     const duration = $el.find('.duration').text().trim()
-    const genre = $el.find('.genre').text().trim()
+    const genre = $el.find('meta[itemprop="genre"]').attr('content') || ''
     const episodeEl = $el.find('.episode')
-    const episode = episodeEl.length ? episodeEl.text().trim() : undefined
+    const episode = episodeEl.length ? episodeEl.text().trim().replace(/EPS/i, 'EP ') : undefined
 
     if (title && link) {
       const slug = link.replace(/^\/+|\/+$/g, '')
@@ -108,11 +109,21 @@ export async function searchLK21(query: string): Promise<LK21Movie[]> {
 }
 
 export async function getLK21Detail(slug: string): Promise<LK21Detail> {
-  const html = await fetchLK21(`/${slug}`)
-  const $ = cheerio.load(html)
+  let html = await fetchLK21(`/${slug}`)
+  let $ = cheerio.load(html)
+
+  const redirectLink = $('a.primary[href]').attr('href')
+  if (redirectLink && $('h1').text().includes('dialihkan')) {
+    html = await fetchLK21(redirectLink)
+    $ = cheerio.load(html)
+  }
 
   const rawTitle = $('h1').first().text().trim()
-  const title = rawTitle.replace(/^Nonton\s+/i, '').replace(/\s+Sub Indo.*$/i, '').replace(/\s+di\s+Lk21$/i, '').trim()
+  const title = rawTitle
+    .replace(/^Nonton\s+(Serial\s+|Film\s+)?/i, '')
+    .replace(/\s+Sub Indo.*$/i, '')
+    .replace(/\s+di\s+Lk21$/i, '')
+    .trim()
 
   const ogTitle = $('meta[property="og:title"]').attr('content') || ''
   const image = $('meta[property="og:image"]').attr('content') ||
@@ -131,10 +142,16 @@ export async function getLK21Detail(slug: string): Promise<LK21Detail> {
   const year = yearMatch ? yearMatch[1] : undefined
 
   const sources: StreamingSource[] = []
-  const iframeSrc = $('iframe#main-player').attr('src') || $('iframe').first().attr('src') || ''
-  if (iframeSrc) {
-    sources.push({ label: 'Server 1', quality: 'HD', server: 1, src: iframeSrc })
+  const mainPlayer = $('iframe#main-player').attr('src') || ''
+  if (mainPlayer && !mainPlayer.includes('youtube.com')) {
+    sources.push({ label: 'Server 1', quality: 'HD', server: 1, src: mainPlayer })
   }
+  $('iframe').each((i, el) => {
+    const src = $(el).attr('src') || ''
+    if (src && !src.includes('youtube.com') && src !== mainPlayer) {
+      sources.push({ label: `Server ${sources.length + 1}`, quality: 'HD', server: sources.length + 1, src })
+    }
+  })
 
   return { title, image, synopsis, year, genre, rating, sources }
 }
