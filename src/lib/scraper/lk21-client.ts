@@ -1,44 +1,83 @@
-import * as cheerio from 'cheerio'
 import type { StreamingSource } from '@/types'
 
-const LK21_BASE = 'https://tv11.lk21official.cc'
-const FETCH_TIMEOUT = 20000
+const TMDB_KEY = '2dca580c2a14b55200e784d157207b4d'
+const TMDB_BASE = 'https://api.themoviedb.org/3'
+const TMDB_IMG = 'https://image.tmdb.org/t/p/w500'
+const FETCH_TIMEOUT = 15000
 const MAX_RETRIES = 3
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-async function fetchLK21(path: string): Promise<string> {
-  const url = path.startsWith('http') ? path : `${LK21_BASE}${path}`
+async function tmdbFetch<T>(path: string): Promise<T> {
+  const separator = path.includes('?') ? '&' : '?'
+  const url = `${TMDB_BASE}${path}${separator}api_key=${TMDB_KEY}&language=id-ID`
+
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT)
     try {
       const res = await fetch(url, {
-        headers: {
-          'User-Agent': UA,
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'id-ID,id;q=0.9,en;q=0.7',
-        },
         signal: controller.signal,
-        redirect: 'follow',
         cache: 'no-store',
       })
       clearTimeout(timer)
+      if (res.status === 429) {
+        if (attempt < MAX_RETRIES - 1) {
+          const retryAfter = parseInt(res.headers.get('Retry-After') || '2', 10)
+          await delay(retryAfter * 1000)
+          continue
+        }
+      }
       if (!res.ok) {
         if (attempt < MAX_RETRIES - 1) { await delay(1000 * Math.pow(2, attempt)); continue }
-        throw new Error(`LK21 HTTP ${res.status}`)
+        throw new Error(`TMDB HTTP ${res.status}`)
       }
-      return await res.text()
+      return await res.json()
     } catch (e) {
       clearTimeout(timer)
       if (attempt === MAX_RETRIES - 1) throw e
       await delay(1000 * Math.pow(2, attempt))
     }
   }
-  throw new Error('LK21: max retries exceeded')
+  throw new Error('TMDB: max retries exceeded')
+}
+
+interface TMDBMovie {
+  id: number
+  title: string
+  poster_path: string | null
+  release_date?: string
+  vote_average?: number
+  overview?: string
+  genre_ids?: number[]
+}
+
+interface TMDBMovieDetail {
+  id: number
+  title: string
+  poster_path: string | null
+  backdrop_path: string | null
+  release_date?: string
+  vote_average?: number
+  overview?: string
+  runtime?: number
+  genres?: Array<{ id: number; name: string }>
+  status?: string
+}
+
+interface TMDBResponse {
+  results: TMDBMovie[]
+  page: number
+  total_pages: number
+}
+
+const GENRE_MAP: Record<number, string> = {
+  28: 'Action', 12: 'Adventure', 16: 'Animation', 35: 'Comedy', 80: 'Crime',
+  99: 'Documentary', 18: 'Drama', 10751: 'Family', 14: 'Fantasy', 36: 'History',
+  27: 'Horror', 10402: 'Music', 9648: 'Mystery', 10749: 'Romance',
+  878: 'Sci-Fi', 10770: 'TV Movie', 53: 'Thriller', 10752: 'War', 37: 'Western',
 }
 
 export interface LK21Movie {
@@ -64,94 +103,65 @@ export interface LK21Detail {
   sources: StreamingSource[]
 }
 
-function parseMovieCards(html: string): LK21Movie[] {
-  const $ = cheerio.load(html)
-  const movies: LK21Movie[] = []
-
-  $('article').each((_, el) => {
-    const $el = $(el)
-    const link = $el.find('a[itemprop="url"]').attr('href') || $el.find('figure a').attr('href') || ''
-    const title = $el.find('.poster-title').text().trim()
-    const image = $el.find('img[itemprop="image"]').attr('src') ||
-      $el.find('source[type="image/jpeg"]').attr('srcset') ||
-      $el.find('img').attr('src') || ''
-    const year = $el.find('.year').text().trim()
-    const quality = $el.find('.label-HD, .label').text().trim()
-    const duration = $el.find('.duration').text().trim()
-    const genre = $el.find('meta[itemprop="genre"]').attr('content') || ''
-    const episodeEl = $el.find('.episode')
-    const episode = episodeEl.length ? episodeEl.text().trim().replace(/EPS/i, 'EP ') : undefined
-
-    if (title && link) {
-      const slug = link.replace(/^\/+|\/+$/g, '')
-      movies.push({ title, slug, image, year, quality, duration, genre, episode })
-    }
-  })
-
-  return movies
+function toMovie(m: TMDBMovie): LK21Movie {
+  const year = m.release_date?.substring(0, 4)
+  const genres = (m.genre_ids || []).map(id => GENRE_MAP[id]).filter(Boolean).join(', ')
+  return {
+    title: m.title,
+    slug: `movie-${m.id}`,
+    image: m.poster_path ? `${TMDB_IMG}${m.poster_path}` : '',
+    year,
+    genre: genres || undefined,
+    quality: 'HD',
+  }
 }
 
 export async function getLK21Latest(page = 1): Promise<LK21Movie[]> {
-  const path = page > 1 ? `/page/${page}/` : '/'
-  const html = await fetchLK21(path)
-  return parseMovieCards(html)
+  const data = await tmdbFetch<TMDBResponse>(`/trending/movie/week?page=${page}`)
+  return data.results.map(toMovie)
 }
 
 export async function getLK21Genre(genre: string, page = 1): Promise<LK21Movie[]> {
-  const path = page > 1 ? `/genre/${genre}/page/${page}/` : `/genre/${genre}`
-  const html = await fetchLK21(path)
-  return parseMovieCards(html)
+  const genreId = Object.entries(GENRE_MAP).find(([, name]) =>
+    name.toLowerCase() === genre.toLowerCase()
+  )?.[0]
+
+  if (!genreId) {
+    const data = await tmdbFetch<TMDBResponse>(`/movie/popular?page=${page}`)
+    return data.results.map(toMovie)
+  }
+
+  const data = await tmdbFetch<TMDBResponse>(`/discover/movie?with_genres=${genreId}&sort_by=popularity.desc&page=${page}`)
+  return data.results.map(toMovie)
 }
 
 export async function searchLK21(query: string): Promise<LK21Movie[]> {
-  const html = await fetchLK21(`/?s=${encodeURIComponent(query)}`)
-  return parseMovieCards(html)
+  const data = await tmdbFetch<TMDBResponse>(`/search/movie?query=${encodeURIComponent(query)}`)
+  return data.results.map(toMovie)
 }
 
 export async function getLK21Detail(slug: string): Promise<LK21Detail> {
-  let html = await fetchLK21(`/${slug}`)
-  let $ = cheerio.load(html)
+  const tmdbId = slug.replace('movie-', '')
+  const data = await tmdbFetch<TMDBMovieDetail>(`/movie/${tmdbId}`)
 
-  const redirectLink = $('a.primary[href]').attr('href')
-  if (redirectLink && $('h1').text().includes('dialihkan')) {
-    html = await fetchLK21(redirectLink)
-    $ = cheerio.load(html)
+  const genres = (data.genres || []).map(g => g.name).join(', ')
+  const year = data.release_date?.substring(0, 4)
+
+  const sources: StreamingSource[] = [
+    { label: 'Server 1', quality: 'HD', server: 1, src: `https://vidsrc.to/embed/movie/${tmdbId}` },
+    { label: 'Server 2', quality: 'HD', server: 2, src: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1` },
+  ]
+
+  return {
+    title: data.title,
+    image: data.backdrop_path ? `https://image.tmdb.org/t/p/original${data.backdrop_path}` :
+      data.poster_path ? `${TMDB_IMG}${data.poster_path}` : '',
+    synopsis: data.overview || 'No synopsis available.',
+    year,
+    genre: genres || undefined,
+    rating: data.vote_average ? `${data.vote_average.toFixed(1)}` : undefined,
+    duration: data.runtime ? `${data.runtime} min` : undefined,
+    quality: 'HD',
+    sources,
   }
-
-  const rawTitle = $('h1').first().text().trim()
-  const title = rawTitle
-    .replace(/^Nonton\s+(Serial\s+|Film\s+)?/i, '')
-    .replace(/\s+Sub Indo.*$/i, '')
-    .replace(/\s+di\s+Lk21$/i, '')
-    .trim()
-
-  const ogTitle = $('meta[property="og:title"]').attr('content') || ''
-  const image = $('meta[property="og:image"]').attr('content') ||
-    $('img[itemprop="image"]').attr('src') || ''
-
-  const synopsisEl = $('.synopsis')
-  const synopsis = synopsisEl.text().trim() || $('meta[property="og:description"]').attr('content') || ''
-
-  const ratingEl = $('[itemprop="ratingValue"]')
-  const rating = ratingEl.text().trim() || undefined
-
-  const genreMeta = $('meta[itemprop="genre"]').attr('content')
-  const genre = genreMeta || undefined
-
-  const yearMatch = ogTitle.match(/\((\d{4})\)/) || rawTitle.match(/\((\d{4})\)/)
-  const year = yearMatch ? yearMatch[1] : undefined
-
-  const sources: StreamingSource[] = []
-  const mainPlayer = $('iframe#main-player').attr('src') || ''
-  if (mainPlayer && !mainPlayer.includes('youtube.com')) {
-    sources.push({ label: 'Server 1', quality: 'HD', server: 1, src: mainPlayer })
-  }
-  $('iframe').each((i, el) => {
-    const src = $(el).attr('src') || ''
-    if (src && !src.includes('youtube.com') && src !== mainPlayer) {
-      sources.push({ label: `Server ${sources.length + 1}`, quality: 'HD', server: sources.length + 1, src })
-    }
-  })
-
-  return { title, image, synopsis, year, genre, rating, sources }
 }
