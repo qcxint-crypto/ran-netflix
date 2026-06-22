@@ -1,6 +1,7 @@
 import HeroBanner from '@/components/home/HeroBanner'
 import AnimeRow from '@/components/home/AnimeRow'
 import MangaRow from '@/components/home/MangaRow'
+import FilmRow from '@/components/home/FilmRow'
 import { getHome } from '@/lib/scraper'
 
 export const dynamic = 'force-dynamic'
@@ -26,6 +27,9 @@ export default async function HomePage() {
       <AnimeRow title="Completed" animes={data.completed} href="/completed" />
       {data.movies && data.movies.length > 0 && (
         <AnimeRow title="Anime Movies" animes={data.movies} href="/movies" />
+      )}
+      {data.films && data.films.length > 0 && (
+        <FilmRow title="Film & Series Terbaru" films={data.films} href="/film" />
       )}
       {data.manga && data.manga.length > 0 && (
         <MangaRow title="Popular Manga" mangas={data.manga} href="/manga" />

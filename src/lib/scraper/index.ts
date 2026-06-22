@@ -2,6 +2,7 @@ import { cacheGet, cacheGetStale, cacheSet } from './cache'
 import type {
   HomeData, AnimeCard, AnimeDetail, EpisodeData, Genre, PaginatedResult,
   MangaCard, MangaDetail, MangaChapterData,
+  FilmCard, FilmDetail,
 } from '@/types'
 import {
   getCurrentSeasonAnime,
@@ -23,6 +24,14 @@ import {
   getMangaChapter as fetchMangaChapter,
   searchManga as fetchSearchManga,
 } from './manga-client'
+import { findEpisodeUrl, getStreamingSources } from './otakudesu-client'
+import {
+  getLK21Latest,
+  getLK21Genre,
+  getLK21Detail as fetchLK21Detail,
+  searchLK21 as fetchSearchLK21,
+  type LK21Movie,
+} from './lk21-client'
 
 const TTL = {
   HOME: 5 * 60 * 1000,
@@ -34,6 +43,21 @@ const TTL = {
   MANGA: 10 * 60 * 1000,
   MANGA_DETAIL: 30 * 60 * 1000,
   MANGA_CHAPTER: 60 * 60 * 1000,
+  FILM: 10 * 60 * 1000,
+  FILM_DETAIL: 30 * 60 * 1000,
+}
+
+function toFilmCard(movie: LK21Movie): FilmCard {
+  return {
+    title: movie.title,
+    slug: movie.slug,
+    image: movie.image,
+    year: movie.year,
+    quality: movie.quality,
+    duration: movie.duration,
+    genre: movie.genre,
+    episode: movie.episode,
+  }
 }
 
 function toAnimeCard(anime: JikanAnime): AnimeCard {
@@ -91,15 +115,20 @@ export async function getHome(): Promise<HomeData> {
     try {
       const mangaRes = await fetchPopularManga(1)
       manga = mangaRes.slice(0, 12)
-    } catch {
-      // Manga is optional on homepage
-    }
+    } catch {}
+
+    let films: FilmCard[] = []
+    try {
+      const lk21Res = await getLK21Latest(1)
+      films = lk21Res.slice(0, 12).map(toFilmCard)
+    } catch {}
 
     const data: HomeData = {
       ongoing: ongoingRes.data.map(toAnimeCard),
       completed: completedRes.data.map(toAnimeCard),
       movies: moviesRes.data.map(toAnimeCard),
       manga,
+      films,
     }
 
     cacheSet(key, data, TTL.HOME)
@@ -107,7 +136,7 @@ export async function getHome(): Promise<HomeData> {
   } catch {
     const stale = cacheGetStale<HomeData>(key)
     if (stale) return stale
-    return { ongoing: [], completed: [], movies: [], manga: [] }
+    return { ongoing: [], completed: [], movies: [], manga: [], films: [] }
   }
 }
 
@@ -226,13 +255,32 @@ export async function getEpisode(slug: string): Promise<EpisodeData> {
     const animeRes = await getAnimeById(malId)
     const anime = animeRes.data
 
+    let sources = cacheGet<EpisodeData>(`episode-sources:${slug}`)?.sources || []
+    if (sources.length === 0) {
+      try {
+        const searchTitle = anime.title_english || anime.title
+        const episodeUrl = await findEpisodeUrl(searchTitle, episodeNum)
+        if (episodeUrl) {
+          sources = await getStreamingSources(episodeUrl)
+        }
+        if (sources.length === 0 && anime.title !== searchTitle) {
+          const episodeUrl2 = await findEpisodeUrl(anime.title, episodeNum)
+          if (episodeUrl2) {
+            sources = await getStreamingSources(episodeUrl2)
+          }
+        }
+      } catch {
+        // Continue without streaming sources
+      }
+    }
+
     const data: EpisodeData = {
       title: `${anime.title} - Episode ${episodeNum}`,
       animeTitle: anime.title,
       animeSlug: `anime-${malId}`,
       prevSlug: episodeNum > 1 ? `anime-${malId}-episode-${episodeNum - 1}` : undefined,
       nextSlug: episodeNum < (anime.episodes || 999) ? `anime-${malId}-episode-${episodeNum + 1}` : undefined,
-      sources: [],
+      sources,
     }
 
     cacheSet(key, data, TTL.EPISODE)
@@ -392,6 +440,94 @@ export async function searchManga(query: string): Promise<MangaCard[]> {
     return data
   } catch {
     const stale = cacheGetStale<MangaCard[]>(key)
+    if (stale) return stale
+    return []
+  }
+}
+
+// --- Film functions (LK21) ---
+
+export async function getFilmList(page: number): Promise<PaginatedResult<FilmCard>> {
+  const key = `film-list:${page}`
+  const cached = cacheGet<PaginatedResult<FilmCard>>(key)
+  if (cached) return cached
+
+  try {
+    const data = await getLK21Latest(page)
+    const result: PaginatedResult<FilmCard> = {
+      data: data.map(toFilmCard),
+      currentPage: page,
+      hasNextPage: data.length >= 20,
+    }
+    cacheSet(key, result, TTL.FILM)
+    return result
+  } catch {
+    const stale = cacheGetStale<PaginatedResult<FilmCard>>(key)
+    if (stale) return stale
+    return { data: [], currentPage: page, hasNextPage: false }
+  }
+}
+
+export async function getFilmGenre(genre: string, page: number): Promise<PaginatedResult<FilmCard>> {
+  const key = `film-genre:${genre}:${page}`
+  const cached = cacheGet<PaginatedResult<FilmCard>>(key)
+  if (cached) return cached
+
+  try {
+    const data = await getLK21Genre(genre, page)
+    const result: PaginatedResult<FilmCard> = {
+      data: data.map(toFilmCard),
+      currentPage: page,
+      hasNextPage: data.length >= 20,
+    }
+    cacheSet(key, result, TTL.FILM)
+    return result
+  } catch {
+    const stale = cacheGetStale<PaginatedResult<FilmCard>>(key)
+    if (stale) return stale
+    return { data: [], currentPage: page, hasNextPage: false }
+  }
+}
+
+export async function getFilmDetail(slug: string): Promise<FilmDetail> {
+  const key = `film-detail:${slug}`
+  const cached = cacheGet<FilmDetail>(key)
+  if (cached) return cached
+
+  try {
+    const data = await fetchLK21Detail(slug)
+    const result: FilmDetail = {
+      title: data.title,
+      image: data.image,
+      synopsis: data.synopsis,
+      year: data.year,
+      genre: data.genre,
+      rating: data.rating,
+      duration: data.duration,
+      quality: data.quality,
+      sources: data.sources,
+    }
+    cacheSet(key, result, TTL.FILM_DETAIL)
+    return result
+  } catch {
+    const stale = cacheGetStale<FilmDetail>(key)
+    if (stale) return stale
+    throw new Error('Failed to load film detail')
+  }
+}
+
+export async function searchFilm(query: string): Promise<FilmCard[]> {
+  const key = `film-search:${query}`
+  const cached = cacheGet<FilmCard[]>(key)
+  if (cached) return cached
+
+  try {
+    const data = await fetchSearchLK21(query)
+    const result = data.map(toFilmCard)
+    cacheSet(key, result, TTL.SEARCH)
+    return result
+  } catch {
+    const stale = cacheGetStale<FilmCard[]>(key)
     if (stale) return stale
     return []
   }

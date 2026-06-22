@@ -71,11 +71,22 @@ function endpointToSlug(endpoint: string): string {
   return endpoint.replace(/^\/+|\/+$/g, '')
 }
 
+function proxyImage(url: string): string {
+  if (!url) return ''
+  try {
+    const parsed = new URL(url)
+    if (parsed.hostname.endsWith('komiku.org')) {
+      return `/api/image-proxy?url=${encodeURIComponent(url)}`
+    }
+  } catch { /* invalid URL, return as-is */ }
+  return url
+}
+
 function toMangaCard(item: MangaListResponse['manga_list'][0]): MangaCard {
   return {
     title: item.title,
     slug: endpointToSlug(item.endpoint),
-    image: item.thumb,
+    image: proxyImage(item.thumb),
     chapter: item.chapter,
     type: item.type,
   }
@@ -95,7 +106,7 @@ export async function getMangaDetail(slug: string): Promise<MangaDetail> {
   const res = await fetchMangaApi<MangaDetailResponse>(`/manga/detail/${slug}/`)
   return {
     title: res.title || slug.replace(/-/g, ' '),
-    image: res.thumb || '',
+    image: proxyImage(res.thumb || ''),
     synopsis: res.synopsis || 'No synopsis available.',
     type: res.type || undefined,
     author: res.author || undefined,
@@ -112,7 +123,7 @@ export async function getMangaChapter(chapterSlug: string, mangaSlug: string): P
   const res = await fetchMangaApi<MangaChapterResponse>(`/chapter/${chapterSlug}/`)
   const images = (res.chapter_image || [])
     .sort((a, b) => a.image_number - b.image_number)
-    .map(img => img.chapter_image_link)
+    .map(img => proxyImage(img.chapter_image_link))
 
   return {
     title: chapterSlug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),

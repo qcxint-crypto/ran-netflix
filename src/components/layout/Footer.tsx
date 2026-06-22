@@ -22,6 +22,7 @@ export default function Footer() {
               <Link href="/anime" className="hover:text-text-primary transition-colors">Anime List</Link>
               <Link href="/genre" className="hover:text-text-primary transition-colors">Genres</Link>
               <Link href="/movies" className="hover:text-text-primary transition-colors">Movies</Link>
+              <Link href="/film" className="hover:text-text-primary transition-colors">Film & Series</Link>
               <Link href="/manga" className="hover:text-text-primary transition-colors">Manga</Link>
             </div>
           </div>

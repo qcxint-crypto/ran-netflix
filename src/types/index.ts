@@ -73,6 +73,32 @@ export interface HomeData {
   completed: AnimeCard[]
   movies?: AnimeCard[]
   manga?: MangaCard[]
+  films?: FilmCard[]
+}
+
+// --- Film types (LK21) ---
+
+export interface FilmCard {
+  title: string
+  slug: string
+  image: string
+  year?: string
+  quality?: string
+  duration?: string
+  genre?: string
+  episode?: string
+}
+
+export interface FilmDetail {
+  title: string
+  image: string
+  synopsis: string
+  year?: string
+  genre?: string
+  rating?: string
+  duration?: string
+  quality?: string
+  sources: StreamingSource[]
 }
 
 // --- Manga types ---

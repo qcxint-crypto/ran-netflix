@@ -45,6 +45,9 @@ export default function Navbar() {
             <Link href="/movies" className="text-sm font-medium text-text-secondary hover:text-text-primary transition-colors">
               Movies
             </Link>
+            <Link href="/film" className="text-sm font-medium text-text-secondary hover:text-text-primary transition-colors">
+              Film
+            </Link>
             <Link href="/manga" className="text-sm font-medium text-text-secondary hover:text-text-primary transition-colors">
               Manga
             </Link>
