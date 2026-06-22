@@ -1,7 +1,7 @@
 import * as cheerio from 'cheerio'
 import type { StreamingSource } from '@/types'
 
-const LK21_BASE = 'https://tv.lk21official.dev'
+const LK21_BASE = 'https://tv11.lk21official.cc'
 const FETCH_TIMEOUT = 20000
 const MAX_RETRIES = 3
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
