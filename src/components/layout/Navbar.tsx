@@ -42,6 +42,12 @@ export default function Navbar() {
             <Link href="/anime" className="text-sm font-medium text-text-secondary hover:text-text-primary transition-colors">
               Anime List
             </Link>
+            <Link href="/movies" className="text-sm font-medium text-text-secondary hover:text-text-primary transition-colors">
+              Movies
+            </Link>
+            <Link href="/manga" className="text-sm font-medium text-text-secondary hover:text-text-primary transition-colors">
+              Manga
+            </Link>
           </div>
         </div>
 
@@ -54,7 +60,7 @@ export default function Navbar() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search anime..."
+              placeholder="Search anime & manga..."
               className="w-56 pl-9 pr-4 py-2 bg-surface border border-border rounded-full text-sm text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-text-secondary transition-colors"
             />
           </form>
@@ -88,7 +94,7 @@ export default function Navbar() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search anime..."
+              placeholder="Search anime & manga..."
               className="w-full pl-9 pr-4 py-2.5 bg-surface border border-border rounded-full text-sm text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-text-secondary"
             />
           </form>

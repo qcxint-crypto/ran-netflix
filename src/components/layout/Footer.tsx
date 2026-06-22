@@ -11,7 +11,7 @@ export default function Footer() {
               <span className="text-accent">Stream</span>
             </h3>
             <p className="text-sm text-text-secondary">
-              Streaming anime subtitle Indonesia gratis dengan kualitas terbaik.
+              Streaming anime, baca manga, dan nonton film gratis dengan kualitas terbaik.
             </p>
           </div>
           <div>
@@ -21,6 +21,8 @@ export default function Footer() {
               <Link href="/completed" className="hover:text-text-primary transition-colors">Completed</Link>
               <Link href="/anime" className="hover:text-text-primary transition-colors">Anime List</Link>
               <Link href="/genre" className="hover:text-text-primary transition-colors">Genres</Link>
+              <Link href="/movies" className="hover:text-text-primary transition-colors">Movies</Link>
+              <Link href="/manga" className="hover:text-text-primary transition-colors">Manga</Link>
             </div>
           </div>
           <div>

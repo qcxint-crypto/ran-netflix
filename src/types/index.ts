@@ -71,4 +71,40 @@ export interface ApiResponse<T> {
 export interface HomeData {
   ongoing: AnimeCard[]
   completed: AnimeCard[]
+  movies?: AnimeCard[]
+  manga?: MangaCard[]
+}
+
+// --- Manga types ---
+
+export interface MangaCard {
+  title: string
+  slug: string
+  image: string
+  chapter?: string
+  type?: string
+}
+
+export interface MangaDetail {
+  title: string
+  image: string
+  synopsis: string
+  type?: string
+  author?: string
+  status?: string
+  genres: string[]
+  chapters: MangaChapterItem[]
+}
+
+export interface MangaChapterItem {
+  title: string
+  slug: string
+}
+
+export interface MangaChapterData {
+  title: string
+  mangaSlug: string
+  images: string[]
+  prevSlug?: string
+  nextSlug?: string
 }
