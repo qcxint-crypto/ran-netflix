@@ -270,8 +270,15 @@ export async function getEpisode(slug: string): Promise<EpisodeData> {
           }
         }
       } catch {
-        // Continue without streaming sources
+        // OtakuDesu failed (likely Cloudflare), continue with embed fallbacks
       }
+    }
+
+    if (sources.length === 0) {
+      sources.push(
+        { label: 'Server 1', quality: 'HD', server: 1, src: `https://vidsrc.to/embed/anime/mal/${malId}/${episodeNum}` },
+        { label: 'Server 2', quality: 'HD', server: 2, src: `https://multiembed.mov/?video_id=${malId}&tmdb=0&mal=1&s=1&e=${episodeNum}` },
+      )
     }
 
     const data: EpisodeData = {
