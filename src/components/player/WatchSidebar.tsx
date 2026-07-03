@@ -62,9 +62,9 @@ export default function WatchSidebar({
           <div className="p-4">
             <h3 className="text-sm font-semibold mb-3">Episodes</h3>
             <div className="max-h-[400px] overflow-y-auto space-y-1">
-              {anime.episodes.map((ep, index) => {
+              {[...anime.episodes].reverse().map((ep) => {
                 const isActive = ep.slug === currentEpisodeSlug
-                const episodeNumber = anime.episodes.length - index
+                const episodeNumber = ep.slug.match(/episode-(\d+)$/)?.[1] ?? ep.title.replace(/\D/g, '')
                 return (
                   <Link
                     key={ep.slug}

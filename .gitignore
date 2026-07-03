@@ -8,5 +8,6 @@ out/
 .env.production
 .env.development
 .vercel
+deploy.sh
 *.tsbuildinfo
 next-env.d.ts

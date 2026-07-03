@@ -40,6 +40,9 @@ export interface StreamingSource {
   quality: string
   server: number
   src: string
+  // Trusted embeds (no popup ads) refuse to play inside a sandboxed iframe,
+  // so they opt out; untrusted ad-heavy embeds stay sandboxed to block popups.
+  noSandbox?: boolean
 }
 
 export interface EpisodeData {

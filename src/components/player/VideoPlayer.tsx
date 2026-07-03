@@ -23,7 +23,8 @@ export default function VideoPlayer({ sources }: { sources: StreamingSource[] })
           src={activeSource.src}
           className="absolute inset-0 w-full h-full"
           allowFullScreen
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+          sandbox={activeSource.noSandbox ? undefined : 'allow-scripts allow-same-origin allow-forms allow-presentation'}
           referrerPolicy="no-referrer"
         />
       </div>

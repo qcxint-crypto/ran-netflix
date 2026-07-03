@@ -156,8 +156,10 @@ export async function getLK21Detail(slug: string): Promise<LK21Detail> {
   const year = data.release_date?.substring(0, 4)
 
   const sources: StreamingSource[] = [
-    { label: 'Server 1', quality: 'HD', server: 1, src: `https://vidsrc.to/embed/movie/${tmdbId}` },
-    { label: 'Server 2', quality: 'HD', server: 2, src: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1` },
+    { label: 'Server 1', quality: 'HD', server: 1, src: `https://vidlink.pro/movie/${tmdbId}`, noSandbox: true },
+    { label: 'Server 2', quality: 'HD', server: 2, src: `https://vidsrc.cc/v2/embed/movie/${tmdbId}`, noSandbox: true },
+    { label: 'Server 3', quality: 'HD', server: 3, src: `https://vidsrc.to/embed/movie/${tmdbId}` },
+    { label: 'Server 4', quality: 'HD', server: 4, src: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1` },
   ]
 
   return {

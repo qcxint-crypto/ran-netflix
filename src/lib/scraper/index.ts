@@ -276,8 +276,9 @@ export async function getEpisode(slug: string): Promise<EpisodeData> {
 
     if (sources.length === 0) {
       sources.push(
-        { label: 'Server 1', quality: 'HD', server: 1, src: `https://vidsrc.to/embed/anime/mal/${malId}/${episodeNum}` },
-        { label: 'Server 2', quality: 'HD', server: 2, src: `https://multiembed.mov/?video_id=${malId}&tmdb=0&mal=1&s=1&e=${episodeNum}` },
+        { label: 'Server 1', quality: 'HD', server: 1, src: `https://vidlink.pro/anime/${malId}/${episodeNum}/sub?fallback=true`, noSandbox: true },
+        { label: 'Server 2', quality: 'HD', server: 2, src: `https://vidsrc.cc/v2/embed/anime/${malId}/${episodeNum}/sub`, noSandbox: true },
+        { label: 'Server 3', quality: 'HD', server: 3, src: `https://multiembed.mov/?video_id=${malId}&tmdb=0&mal=1&s=1&e=${episodeNum}` },
       )
     }
 
