@@ -1,56 +1,47 @@
 import { NextResponse } from 'next/server'
-import {
-  searchOtakuDesu,
-  getOtakuDesuEpisodes,
-  getStreamingSources,
-  findEpisodeUrl,
-} from '@/lib/scraper/otakudesu-client'
+import * as cheerio from 'cheerio'
+import { fetchHTML } from '@/lib/scraper/fetcher'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-// Runs the REAL otakudesu pipeline stage-by-stage so we can see exactly
-// where Vercel diverges from local. Query: /api/debug/probe?q=youjo%20senki&ep=1
+// Dumps the raw anime page as seen from Vercel so we can compare markup.
+// /api/debug/probe?url=https://otakudesu.blog/anime/youjo-senki-subtitle-indonesia/
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
-  const q = searchParams.get('q') || 'youjo senki'
-  const ep = parseInt(searchParams.get('ep') || '1', 10)
+  const url =
+    searchParams.get('url') ||
+    'https://otakudesu.blog/anime/youjo-senki-subtitle-indonesia/'
 
-  const out: Record<string, unknown> = {
-    region: process.env.VERCEL_REGION || 'unknown',
-    query: q,
-    episode: ep,
-  }
+  const out: Record<string, unknown> = { region: process.env.VERCEL_REGION, url }
 
   try {
-    const search = await searchOtakuDesu(q)
-    out.stage1_search = {
-      count: search.length,
-      first3: search.slice(0, 3).map((r) => ({ title: r.title, url: r.url })),
+    const html = await fetchHTML(url)
+    const $ = cheerio.load(html)
+    out.len = html.length
+    out.title = $('title').text().trim()
+    out.selectors = {
+      '.episodelist': $('.episodelist').length,
+      '.episodelist ul li': $('.episodelist ul li').length,
+      '.episodelist ul li a': $('.episodelist ul li a').length,
+      'a[href*="/episode/"]': $('a[href*="/episode/"]').length,
+      'a[href*="-episode-"]': $('a[href*="-episode-"]').length,
+      '.venser': $('.venser').length,
+      '.venutama': $('.venutama').length,
     }
-    if (search.length === 0) return NextResponse.json(out)
-
-    const animeUrl = search[0].url
-    const episodes = await getOtakuDesuEpisodes(animeUrl)
-    out.stage2_episodes = {
-      animeUrl,
-      count: episodes.length,
-      sample: episodes.slice(0, 3).map((e) => ({ title: e.title, url: e.url })),
-    }
-    if (episodes.length === 0) return NextResponse.json(out)
-
-    const epUrl = await findEpisodeUrl(q, ep)
-    out.stage3_findEpisodeUrl = epUrl
-    if (!epUrl) return NextResponse.json(out)
-
-    const sources = await getStreamingSources(epUrl)
-    out.stage4_sources = {
-      count: sources.length,
-      sources: sources.map((s) => ({ label: s.label, quality: s.quality, src: s.src })),
-    }
+    // sample episode-ish links regardless of container
+    const links: string[] = []
+    $('a').each((_, el) => {
+      const href = $(el).attr('href') || ''
+      if (/episode/i.test(href) && links.length < 6) links.push(href)
+    })
+    out.episodeLinksSample = links
+    // is it a challenge / different page?
+    out.isChallenge =
+      /just a moment|challenge-platform|__cf_chl|enable javascript/i.test(html)
+    out.snippet = html.slice(0, 200).replace(/\s+/g, ' ')
   } catch (e) {
     out.error = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
-    out.stack = e instanceof Error ? e.stack?.slice(0, 500) : undefined
   }
 
   return NextResponse.json(out, { headers: { 'cache-control': 'no-store' } })
