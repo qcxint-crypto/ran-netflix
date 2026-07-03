@@ -1,60 +1,57 @@
 import { NextResponse } from 'next/server'
+import {
+  searchOtakuDesu,
+  getOtakuDesuEpisodes,
+  getStreamingSources,
+  findEpisodeUrl,
+} from '@/lib/scraper/otakudesu-client'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 30
+export const maxDuration = 60
 
-const UA =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+// Runs the REAL otakudesu pipeline stage-by-stage so we can see exactly
+// where Vercel diverges from local. Query: /api/debug/probe?q=youjo%20senki&ep=1
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url)
+  const q = searchParams.get('q') || 'youjo senki'
+  const ep = parseInt(searchParams.get('ep') || '1', 10)
 
-async function probe(url: string) {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 20000)
+  const out: Record<string, unknown> = {
+    region: process.env.VERCEL_REGION || 'unknown',
+    query: q,
+    episode: ep,
+  }
+
   try {
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': UA,
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'id-ID,id;q=0.9,en;q=0.8',
-      },
-      signal: controller.signal,
-      redirect: 'follow',
-      cache: 'no-store',
-    })
-    const body = await res.text()
-    return {
-      url,
-      status: res.status,
-      server: res.headers.get('server'),
-      cfRay: res.headers.get('cf-ray'),
-      cfMitigated: res.headers.get('cf-mitigated'),
-      contentType: res.headers.get('content-type'),
-      len: body.length,
-      isChallenge:
-        /just a moment|cf-challenge|challenge-platform|turnstile|__cf_chl|enable javascript and cookies/i.test(
-          body
-        ),
-      snippet: body.slice(0, 300).replace(/\s+/g, ' '),
+    const search = await searchOtakuDesu(q)
+    out.stage1_search = {
+      count: search.length,
+      first3: search.slice(0, 3).map((r) => ({ title: r.title, url: r.url })),
+    }
+    if (search.length === 0) return NextResponse.json(out)
+
+    const animeUrl = search[0].url
+    const episodes = await getOtakuDesuEpisodes(animeUrl)
+    out.stage2_episodes = {
+      animeUrl,
+      count: episodes.length,
+      sample: episodes.slice(0, 3).map((e) => ({ title: e.title, url: e.url })),
+    }
+    if (episodes.length === 0) return NextResponse.json(out)
+
+    const epUrl = await findEpisodeUrl(q, ep)
+    out.stage3_findEpisodeUrl = epUrl
+    if (!epUrl) return NextResponse.json(out)
+
+    const sources = await getStreamingSources(epUrl)
+    out.stage4_sources = {
+      count: sources.length,
+      sources: sources.map((s) => ({ label: s.label, quality: s.quality, src: s.src })),
     }
   } catch (e) {
-    return { url, error: e instanceof Error ? e.message : String(e) }
-  } finally {
-    clearTimeout(timer)
+    out.error = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+    out.stack = e instanceof Error ? e.stack?.slice(0, 500) : undefined
   }
-}
 
-export async function GET() {
-  const targets = [
-    'https://otakudesu.blog/?s=youjo+senki&post_type=anime',
-    'https://otakudesu.cloud/?s=youjo+senki&post_type=anime',
-    'https://otakudesu.best/?s=youjo+senki&post_type=anime',
-  ]
-  const results = await Promise.all(targets.map(probe))
-  return NextResponse.json(
-    {
-      region: process.env.VERCEL_REGION || 'unknown',
-      now: new Date().toISOString(),
-      results,
-    },
-    { headers: { 'cache-control': 'no-store' } }
-  )
+  return NextResponse.json(out, { headers: { 'cache-control': 'no-store' } })
 }
