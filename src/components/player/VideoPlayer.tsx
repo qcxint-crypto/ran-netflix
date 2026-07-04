@@ -35,6 +35,9 @@ export default function VideoPlayer({ sources }: { sources: StreamingSource[] })
           onSelect={setActiveSource}
         />
       )}
+      <p className="text-xs text-text-secondary mt-2 px-1">
+        Video tidak muncul atau error? Coba pilih server lain di atas.
+      </p>
     </div>
   )
 }

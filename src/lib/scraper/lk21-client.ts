@@ -155,11 +155,15 @@ export async function getLK21Detail(slug: string): Promise<LK21Detail> {
   const genres = (data.genres || []).map(g => g.name).join(', ')
   const year = data.release_date?.substring(0, 4)
 
+  // Providers verified reachable from Indonesian ISPs (vidsrc.cc is DNS-blocked
+  // there → dropped; multiembed refuses sandbox → dropped). Clean SPA players
+  // (vidfast/vidlink) opt out of the sandbox since they refuse to run in one;
+  // vidsrc.to/2embed stay sandboxed so their popunder ads are blocked.
   const sources: StreamingSource[] = [
-    { label: 'Server 1', quality: 'HD', server: 1, src: `https://vidlink.pro/movie/${tmdbId}`, noSandbox: true },
-    { label: 'Server 2', quality: 'HD', server: 2, src: `https://vidsrc.cc/v2/embed/movie/${tmdbId}`, noSandbox: true },
+    { label: 'Server 1', quality: 'HD', server: 1, src: `https://vidfast.pro/movie/${tmdbId}`, noSandbox: true },
+    { label: 'Server 2', quality: 'HD', server: 2, src: `https://vidlink.pro/movie/${tmdbId}`, noSandbox: true },
     { label: 'Server 3', quality: 'HD', server: 3, src: `https://vidsrc.to/embed/movie/${tmdbId}` },
-    { label: 'Server 4', quality: 'HD', server: 4, src: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1` },
+    { label: 'Server 4', quality: 'HD', server: 4, src: `https://www.2embed.cc/embed/${tmdbId}` },
   ]
 
   return {
