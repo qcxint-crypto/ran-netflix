@@ -296,8 +296,13 @@ export async function getEpisode(slug: string): Promise<EpisodeData> {
       }
     }
 
-    // Source 2 — animasu (covers many titles otakudesu lacks; native quality).
-    if (sources.length === 0) {
+    // Source 2 — animasu (covers many titles otakudesu lacks; native 480/720/
+    // 1080p quality). animasu serves a Cloudflare JS-challenge to datacenter IPs
+    // (incl. Vercel) but not to Indonesian residential IPs, so it only works when
+    // fetchHTML is routed through an Indonesian residential proxy. Gated off by
+    // default to avoid wasted 403 latency; set ENABLE_ANIMASU=1 (with a proxy) to
+    // activate.
+    if (sources.length === 0 && process.env.ENABLE_ANIMASU === '1') {
       try {
         sources = await getAnimasuEpisodeSources(candidateTitles, episodeNum)
       } catch {
