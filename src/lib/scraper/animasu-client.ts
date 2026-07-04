@@ -31,7 +31,7 @@ function tokenize(s: string): string[] {
 interface Result { title: string; url: string }
 
 async function searchAnimasu(query: string): Promise<Result[]> {
-  const html = await fetchHTML(`${ANIMASU_BASE}/?s=${encodeURIComponent(query)}`)
+  const html = await fetchHTML(`${ANIMASU_BASE}/?s=${encodeURIComponent(query)}`, { solver: true })
   const $ = cheerio.load(html)
   const seen = new Set<string>()
   const results: Result[] = []
@@ -81,7 +81,7 @@ async function matchAnimasu(titles: string[]): Promise<string | null> {
 }
 
 async function getAnimasuEpisodes(animeUrl: string): Promise<Array<{ num: number; url: string }>> {
-  const html = await fetchHTML(animeUrl)
+  const html = await fetchHTML(animeUrl, { solver: true })
   const $ = cheerio.load(html)
   const seen = new Set<number>()
   const eps: Array<{ num: number; url: string }> = []
@@ -108,7 +108,7 @@ function decodeMirror(value: string): string {
 }
 
 export async function getAnimasuSources(episodeUrl: string): Promise<StreamingSource[]> {
-  const html = await fetchHTML(episodeUrl)
+  const html = await fetchHTML(episodeUrl, { solver: true })
   const $ = cheerio.load(html)
   const sources: StreamingSource[] = []
   const seen = new Set<string>()

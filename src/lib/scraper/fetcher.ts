@@ -7,7 +7,34 @@ async function delay(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-export async function fetchHTML(url: string): Promise<string> {
+// Sources like animasu/samehadaku/lk21 serve a Cloudflare JS-challenge to
+// datacenter IPs. A plain fetch can't solve it. If FLARESOLVERR_URL points at a
+// running FlareSolverr instance (free, headless-Chrome challenge solver, ideally
+// on an Indonesian residential IP), route those fetches through it. Unset =>
+// direct fetch, so default behaviour is unchanged.
+async function fetchViaSolver(url: string): Promise<string> {
+  const base = (process.env.FLARESOLVERR_URL || '').replace(/\/$/, '')
+  const res = await fetch(`${base}/v1`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cmd: 'request.get', url, maxTimeout: 60000 }),
+    cache: 'no-store',
+  })
+  if (!res.ok) throw new Error(`FlareSolverr HTTP ${res.status}`)
+  const json = (await res.json()) as { solution?: { response?: string } }
+  const html = json?.solution?.response
+  if (!html) throw new Error('FlareSolverr: empty response')
+  return html
+}
+
+export async function fetchHTML(
+  url: string,
+  opts?: { solver?: boolean }
+): Promise<string> {
+  if (opts?.solver && process.env.FLARESOLVERR_URL) {
+    return fetchViaSolver(url)
+  }
+
   let lastError: Error | null = null
 
   for (let attempt = 0; attempt < RETRY_COUNT; attempt++) {
