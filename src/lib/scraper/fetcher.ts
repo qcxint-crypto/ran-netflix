@@ -17,7 +17,7 @@ async function fetchViaSolver(url: string): Promise<string> {
   // Bounded so a down/offline solver (e.g. the user's PC is off) fails fast and
   // getEpisode falls through to otakudesu/embeds instead of hanging.
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 35000)
+  const timer = setTimeout(() => controller.abort(), 18000)
   try {
     const res = await fetch(`${base}/v1`, {
       method: 'POST',
