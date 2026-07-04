@@ -69,7 +69,10 @@ async function matchAnimasu(titles: string[]): Promise<string | null> {
     let shared = 0
     tk.forEach((t) => { if (query.indexOf(t) !== -1) shared++ })
     if (shared === 0) continue
-    const score = shared / tk.length + shared / query.length
+    // Prefer titles that don't carry extra tokens (avoids spin-offs/movies
+    // beating the base series), and hard-boost an exact token-set match.
+    let score = shared / tk.length + shared / query.length
+    if (shared === tk.length && shared === query.length) score += 10
     if (score > bestScore) {
       bestScore = score; best = r; bestShared = shared; bestSize = tk.length
     }
