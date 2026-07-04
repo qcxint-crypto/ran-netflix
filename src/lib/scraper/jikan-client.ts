@@ -14,6 +14,7 @@ export interface JikanAnime {
   title: string
   title_english?: string
   title_japanese?: string
+  title_synonyms?: string[]
   images: {
     jpg: { image_url: string; large_image_url: string }
     webp: { image_url: string; large_image_url: string }

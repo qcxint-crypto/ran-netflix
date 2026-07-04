@@ -24,7 +24,12 @@ import {
   getMangaChapter as fetchMangaChapter,
   searchManga as fetchSearchManga,
 } from './manga-client'
-import { findEpisodeUrl, getStreamingSources } from './otakudesu-client'
+import {
+  findEpisodeUrl,
+  getStreamingSources,
+  getOtakuDesuEpisodes,
+  matchAnimeByTitles,
+} from './otakudesu-client'
 import {
   getLK21Latest,
   getLK21Genre,
@@ -258,19 +263,35 @@ export async function getEpisode(slug: string): Promise<EpisodeData> {
     let sources = cacheGet<EpisodeData>(`episode-sources:${slug}`)?.sources || []
     if (sources.length === 0) {
       try {
-        const searchTitle = anime.title_english || anime.title
-        const episodeUrl = await findEpisodeUrl(searchTitle, episodeNum)
-        if (episodeUrl) {
-          sources = await getStreamingSources(episodeUrl)
+        // Primary: fuzzy-match the anime against otakudesu's full title index
+        // (far higher hit rate than its weak ?s= search).
+        const candidateTitles = [
+          anime.title_english,
+          anime.title,
+          ...(anime.title_synonyms || []),
+        ].filter(Boolean) as string[]
+        const animeUrl = await matchAnimeByTitles(candidateTitles)
+        if (animeUrl) {
+          const episodes = await getOtakuDesuEpisodes(animeUrl)
+          const target = episodes.find((ep) => {
+            const m = ep.title.match(/episode\s*(\d+)/i)
+            return m && parseInt(m[1], 10) === episodeNum
+          })
+          if (target) sources = await getStreamingSources(target.url)
         }
-        if (sources.length === 0 && anime.title !== searchTitle) {
-          const episodeUrl2 = await findEpisodeUrl(anime.title, episodeNum)
-          if (episodeUrl2) {
-            sources = await getStreamingSources(episodeUrl2)
+
+        // Secondary: fall back to otakudesu's own search matching.
+        if (sources.length === 0) {
+          const searchTitle = anime.title_english || anime.title
+          const episodeUrl = await findEpisodeUrl(searchTitle, episodeNum)
+          if (episodeUrl) sources = await getStreamingSources(episodeUrl)
+          if (sources.length === 0 && anime.title !== searchTitle) {
+            const episodeUrl2 = await findEpisodeUrl(anime.title, episodeNum)
+            if (episodeUrl2) sources = await getStreamingSources(episodeUrl2)
           }
         }
       } catch {
-        // OtakuDesu failed (likely Cloudflare), continue with embed fallbacks
+        // OtakuDesu unreachable, continue with embed fallbacks
       }
     }
 

@@ -2,7 +2,109 @@ import * as cheerio from 'cheerio'
 import { fetchHTML, postAjax } from './fetcher'
 import { BASE_URL } from './config'
 import { extractSlug } from '@/lib/utils'
+import { cacheGet, cacheGetStale, cacheSet } from './cache'
 import type { StreamingSource } from '@/types'
+
+// --- Anime-list index + fuzzy matcher ---------------------------------------
+// otakudesu's ?s= search does loose synopsis matching and frequently misses a
+// title even when the site carries it (and MAL titles rarely equal otakudesu's
+// romaji names). Instead we index the full /anime-list/ once and fuzzy-match
+// the anime's MAL titles/synonyms against it. This resolves far more titles.
+
+const ANIME_INDEX_KEY = 'otakudesu:anime-index'
+const ANIME_INDEX_TTL = 6 * 60 * 60 * 1000 // 6h
+
+interface AnimeIndexEntry {
+  title: string
+  url: string
+}
+
+const STOP = new Set([
+  'the', 'a', 'no', 'ni', 'wa', 'to', 'de', 'na', 'ga', 'season',
+  '2nd', '3rd', 'part', 'and', 'of', 'sub', 'indo',
+])
+
+function normalizeTitle(s: string): string {
+  return s
+    .replace(/\(episode.*?\)/gi, ' ')
+    .replace(/subtitle indonesia|sub indo|\bbd\b/gi, ' ')
+    .replace(/&#8211;|&#8217;|&amp;/gi, ' ')
+    .replace(/[^a-z0-9]+/gi, ' ')
+    .toLowerCase()
+    .trim()
+}
+
+function tokenize(s: string): string[] {
+  const out: string[] = []
+  normalizeTitle(s)
+    .split(/\s+/)
+    .forEach((t) => {
+      if (t && t.length > 1 && !STOP.has(t) && out.indexOf(t) === -1) out.push(t)
+    })
+  return out
+}
+
+async function getAnimeIndex(): Promise<AnimeIndexEntry[]> {
+  const cached = cacheGet<AnimeIndexEntry[]>(ANIME_INDEX_KEY)
+  if (cached) return cached
+  try {
+    const html = await fetchHTML(`${BASE_URL}/anime-list/`)
+    const $ = cheerio.load(html)
+    const entries: AnimeIndexEntry[] = []
+    $('a.hodebgst').each((_, el) => {
+      const url = $(el).attr('href') || ''
+      const title = $(el).attr('title') || $(el).text().trim()
+      if (url.includes('/anime/') && title) entries.push({ title, url })
+    })
+    if (entries.length > 0) {
+      cacheSet(ANIME_INDEX_KEY, entries, ANIME_INDEX_TTL)
+      return entries
+    }
+    const stale = cacheGetStale<AnimeIndexEntry[]>(ANIME_INDEX_KEY)
+    return stale || []
+  } catch {
+    const stale = cacheGetStale<AnimeIndexEntry[]>(ANIME_INDEX_KEY)
+    return stale || []
+  }
+}
+
+// Best otakudesu anime URL for a set of candidate titles, or null if no
+// confident match (so callers can fall back instead of playing wrong content).
+export async function matchAnimeByTitles(titles: string[]): Promise<string | null> {
+  const query: string[] = []
+  titles.forEach((t) => {
+    if (t) tokenize(t).forEach((tok) => { if (query.indexOf(tok) === -1) query.push(tok) })
+  })
+  if (query.length === 0) return null
+
+  const index = await getAnimeIndex()
+  if (index.length === 0) return null
+
+  let best: AnimeIndexEntry | null = null
+  let bestScore = 0
+  let bestShared = 0
+  let bestSize = 0
+  for (const entry of index) {
+    const tk = tokenize(entry.title)
+    if (tk.length === 0) continue
+    let shared = 0
+    tk.forEach((t) => { if (query.indexOf(t) !== -1) shared++ })
+    if (shared === 0) continue
+    const score = shared / tk.length + shared / query.length
+    if (score > bestScore) {
+      bestScore = score
+      best = entry
+      bestShared = shared
+      bestSize = tk.length
+    }
+  }
+
+  const confident =
+    best !== null &&
+    bestScore >= 1.0 &&
+    (bestShared >= 2 || (bestShared >= 1 && bestSize <= 2))
+  return confident ? best!.url : null
+}
 
 async function resolveNonce(nonceAction: string): Promise<string | null> {
   try {
