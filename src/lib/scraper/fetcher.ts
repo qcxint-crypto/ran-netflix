@@ -21,7 +21,12 @@ async function fetchViaSolver(url: string): Promise<string> {
   try {
     const res = await fetch(`${base}/v1`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        // Skip localtunnel's interstitial reminder page (ignored by others).
+        'bypass-tunnel-reminder': 'true',
+        'User-Agent': 'RANStream/1.0',
+      },
       body: JSON.stringify({ cmd: 'request.get', url, maxTimeout: 30000 }),
       cache: 'no-store',
       signal: controller.signal,
