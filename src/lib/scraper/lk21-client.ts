@@ -155,15 +155,16 @@ export async function getLK21Detail(slug: string): Promise<LK21Detail> {
   const genres = (data.genres || []).map(g => g.name).join(', ')
   const year = data.release_date?.substring(0, 4)
 
-  // Providers verified reachable from Indonesian ISPs (vidsrc.cc is DNS-blocked
-  // there → dropped; multiembed refuses sandbox → dropped). Clean SPA players
-  // (vidfast/vidlink) opt out of the sandbox since they refuse to run in one;
-  // vidsrc.to/2embed stay sandboxed so their popunder ads are blocked.
+  // All movie embeds are SANDBOXED (no allow-popups / allow-top-navigation) so
+  // provider popunder ads and tab-redirects are blocked. vidlink is intentionally
+  // excluded here because it refuses to run sandboxed; the players below all play
+  // fine inside the sandbox and expose their own quality menu. Reachable from
+  // Indonesian ISPs (vidsrc.cc is DNS-blocked there, multiembed refuses sandbox).
   const sources: StreamingSource[] = [
-    { label: 'Server 1', quality: 'HD', server: 1, src: `https://vidfast.pro/movie/${tmdbId}`, noSandbox: true },
-    { label: 'Server 2', quality: 'HD', server: 2, src: `https://vidlink.pro/movie/${tmdbId}`, noSandbox: true },
-    { label: 'Server 3', quality: 'HD', server: 3, src: `https://vidsrc.to/embed/movie/${tmdbId}` },
-    { label: 'Server 4', quality: 'HD', server: 4, src: `https://www.2embed.cc/embed/${tmdbId}` },
+    { label: 'Server 1', quality: 'HD', server: 1, src: `https://vidfast.pro/movie/${tmdbId}` },
+    { label: 'Server 2', quality: 'HD', server: 2, src: `https://vidsrc.to/embed/movie/${tmdbId}` },
+    { label: 'Server 3', quality: 'HD', server: 3, src: `https://www.2embed.cc/embed/${tmdbId}` },
+    { label: 'Server 4', quality: 'HD', server: 4, src: `https://111movies.com/movie/${tmdbId}` },
   ]
 
   return {
