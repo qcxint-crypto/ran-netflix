@@ -14,17 +14,26 @@ async function delay(ms: number) {
 // direct fetch, so default behaviour is unchanged.
 async function fetchViaSolver(url: string): Promise<string> {
   const base = (process.env.FLARESOLVERR_URL || '').replace(/\/$/, '')
-  const res = await fetch(`${base}/v1`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cmd: 'request.get', url, maxTimeout: 60000 }),
-    cache: 'no-store',
-  })
-  if (!res.ok) throw new Error(`FlareSolverr HTTP ${res.status}`)
-  const json = (await res.json()) as { solution?: { response?: string } }
-  const html = json?.solution?.response
-  if (!html) throw new Error('FlareSolverr: empty response')
-  return html
+  // Bounded so a down/offline solver (e.g. the user's PC is off) fails fast and
+  // getEpisode falls through to otakudesu/embeds instead of hanging.
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 35000)
+  try {
+    const res = await fetch(`${base}/v1`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cmd: 'request.get', url, maxTimeout: 30000 }),
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+    if (!res.ok) throw new Error(`FlareSolverr HTTP ${res.status}`)
+    const json = (await res.json()) as { solution?: { response?: string } }
+    const html = json?.solution?.response
+    if (!html) throw new Error('FlareSolverr: empty response')
+    return html
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 export async function fetchHTML(
