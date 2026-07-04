@@ -30,6 +30,7 @@ import {
   getOtakuDesuEpisodes,
   matchAnimeByTitles,
 } from './otakudesu-client'
+import { getAnimasuEpisodeSources } from './animasu-client'
 import {
   getLK21Latest,
   getLK21Genre,
@@ -260,16 +261,18 @@ export async function getEpisode(slug: string): Promise<EpisodeData> {
     const animeRes = await getAnimeById(malId)
     const anime = animeRes.data
 
+    const candidateTitles = [
+      anime.title_english,
+      anime.title,
+      ...(anime.title_synonyms || []),
+    ].filter(Boolean) as string[]
+
     let sources = cacheGet<EpisodeData>(`episode-sources:${slug}`)?.sources || []
+
+    // Source 1 — otakudesu (fuzzy-matched against its full title index, which
+    // has a far higher hit rate than its weak ?s= search).
     if (sources.length === 0) {
       try {
-        // Primary: fuzzy-match the anime against otakudesu's full title index
-        // (far higher hit rate than its weak ?s= search).
-        const candidateTitles = [
-          anime.title_english,
-          anime.title,
-          ...(anime.title_synonyms || []),
-        ].filter(Boolean) as string[]
         const animeUrl = await matchAnimeByTitles(candidateTitles)
         if (animeUrl) {
           const episodes = await getOtakuDesuEpisodes(animeUrl)
@@ -279,8 +282,6 @@ export async function getEpisode(slug: string): Promise<EpisodeData> {
           })
           if (target) sources = await getStreamingSources(target.url)
         }
-
-        // Secondary: fall back to otakudesu's own search matching.
         if (sources.length === 0) {
           const searchTitle = anime.title_english || anime.title
           const episodeUrl = await findEpisodeUrl(searchTitle, episodeNum)
@@ -291,13 +292,22 @@ export async function getEpisode(slug: string): Promise<EpisodeData> {
           }
         }
       } catch {
-        // OtakuDesu unreachable, continue with embed fallbacks
+        // otakudesu unreachable, try the next source
+      }
+    }
+
+    // Source 2 — animasu (covers many titles otakudesu lacks; native quality).
+    if (sources.length === 0) {
+      try {
+        sources = await getAnimasuEpisodeSources(candidateTitles, episodeNum)
+      } catch {
+        // animasu unreachable, fall through to embeds
       }
     }
 
     if (sources.length === 0) {
-      // otakudesu doesn't carry this title; fall back to MAL-mapped embeds that
-      // are reachable from Indonesian ISPs (vidsrc.cc is DNS-blocked there).
+      // Neither scraper carries this title; fall back to MAL-mapped embeds
+      // reachable from Indonesian ISPs (vidsrc.cc is DNS-blocked there).
       sources.push(
         { label: 'Server 1', quality: 'HD', server: 1, src: `https://vidlink.pro/anime/${malId}/${episodeNum}/sub?fallback=true`, noSandbox: true },
         { label: 'Server 2', quality: 'HD', server: 2, src: `https://vidnest.fun/anime/${malId}/${episodeNum}/sub`, noSandbox: true },
