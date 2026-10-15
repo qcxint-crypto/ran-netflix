@@ -16,7 +16,7 @@ import {
   genreSlugToId,
   genreToSlug,
   type JikanAnime,
-} from './jikan-client'
+} from './anilist-client'
 import {
   getLatestManga as fetchLatestManga,
   getPopularManga as fetchPopularManga,
