@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server'
 import { getHome } from '@/lib/scraper'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 30
+// getHome fans out with an 8s per-source cap, so it always resolves well under
+// this; the ceiling only guards the platform from a pathological hang.
+export const maxDuration = 15
 
 export async function GET() {
   try {

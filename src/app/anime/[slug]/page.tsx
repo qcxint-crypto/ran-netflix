@@ -1,7 +1,8 @@
 import Image from 'next/image'
 import Link from 'next/link'
-import { getAnimeDetail } from '@/lib/scraper'
+import { getAnimeDetail, NotFoundError } from '@/lib/scraper'
 import EpisodeList from '@/components/anime/EpisodeList'
+import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 
 export const dynamic = 'force-dynamic'
@@ -31,7 +32,9 @@ export default async function AnimeDetailPage({
   let detail
   try {
     detail = await getAnimeDetail(slug)
-  } catch {
+  } catch (err) {
+    // A missing title is a 404, not a render error.
+    if (err instanceof NotFoundError) notFound()
     return (
       <div className="pt-16 flex items-center justify-center min-h-screen">
         <p className="text-text-secondary">Gagal memuat detail anime</p>

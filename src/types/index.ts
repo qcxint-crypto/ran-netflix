@@ -43,6 +43,9 @@ export interface StreamingSource {
   // Trusted embeds (no popup ads) refuse to play inside a sandboxed iframe,
   // so they opt out; untrusted ad-heavy embeds stay sandboxed to block popups.
   noSandbox?: boolean
+  // External link: opens in a new tab instead of an iframe (used when the
+  // provider's playback must stay on their own site).
+  external?: boolean
 }
 
 export interface EpisodeData {
@@ -90,6 +93,7 @@ export interface FilmCard {
   duration?: string
   genre?: string
   episode?: string
+  rating?: string
 }
 
 export interface FilmDetail {

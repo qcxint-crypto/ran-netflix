@@ -1,17 +1,26 @@
 import type { MangaCard, MangaDetail, MangaChapterData } from '@/types'
 
 const MANGA_BASE = 'https://manga-api-rosy.vercel.app/api'
-const FETCH_TIMEOUT = 20000
+const REQUEST_TIMEOUT = 8000
 const MAX_RETRIES = 3
+// Hard ceiling for the whole call including backoff: 3 attempts x 20s was 60s
+// worst case, which blew through the route's response budget.
+const TOTAL_BUDGET = 15000
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 async function fetchMangaApi<T>(path: string): Promise<T> {
+  const startedAt = Date.now()
+  let lastErr: unknown
+
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const remaining = TOTAL_BUDGET - (Date.now() - startedAt)
+    if (remaining <= 500) break
+
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT)
+    const timer = setTimeout(() => controller.abort(), Math.min(REQUEST_TIMEOUT, remaining))
 
     try {
       const res = await fetch(`${MANGA_BASE}${path}`, {
@@ -22,22 +31,24 @@ async function fetchMangaApi<T>(path: string): Promise<T> {
       clearTimeout(timer)
 
       if (res.status === 429 || res.status >= 500) {
+        lastErr = new Error(`Manga API error: ${res.status}`)
         if (attempt < MAX_RETRIES - 1) {
-          await delay(1000 * Math.pow(2, attempt))
+          await delay(Math.min(1000 * Math.pow(2, attempt), Math.max(0, TOTAL_BUDGET - (Date.now() - startedAt))))
           continue
         }
-        throw new Error(`Manga API error: ${res.status}`)
+        throw lastErr
       }
 
       if (!res.ok) throw new Error(`Manga API error: ${res.status}`)
       return await res.json()
     } catch (e) {
       clearTimeout(timer)
+      lastErr = e
       if (attempt === MAX_RETRIES - 1) throw e
-      await delay(1000 * Math.pow(2, attempt))
+      await delay(Math.min(1000 * Math.pow(2, attempt), Math.max(0, TOTAL_BUDGET - (Date.now() - startedAt))))
     }
   }
-  throw new Error('Manga API: max retries exceeded')
+  throw lastErr instanceof Error ? lastErr : new Error('Manga API: max retries exceeded')
 }
 
 interface MangaListResponse {

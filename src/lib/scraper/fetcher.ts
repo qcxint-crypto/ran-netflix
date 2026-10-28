@@ -2,9 +2,22 @@ import { USER_AGENT, FETCH_TIMEOUT } from './config'
 
 const RETRY_COUNT = 3
 const RETRY_DELAY = 1000
+// Total wall-clock budget for one fetchHTML call, retries and backoff included.
+// Without it 3 attempts x 20s timeout = 60s, which overruns the route budget.
+const RETRY_BUDGET = 20000
 
 async function delay(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+// Bounds any promise to `ms`, resolving to `fallback` on timeout or rejection so
+// one slow source cannot hold up a parallel fan-out.
+export function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  const timeout = new Promise<T>(resolve => {
+    timer = setTimeout(() => resolve(fallback), ms)
+  })
+  return Promise.race([promise.catch(() => fallback), timeout]).finally(() => clearTimeout(timer))
 }
 
 // Sources like animasu/samehadaku/lk21 serve a Cloudflare JS-challenge to
@@ -50,12 +63,15 @@ export async function fetchHTML(
   }
 
   let lastError: Error | null = null
+  const startedAt = Date.now()
 
   for (let attempt = 0; attempt < RETRY_COUNT; attempt++) {
+    if (Date.now() - startedAt >= RETRY_BUDGET) break
     if (attempt > 0) await delay(RETRY_DELAY * attempt)
 
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT)
+    const remaining = Math.max(1000, Math.min(FETCH_TIMEOUT, RETRY_BUDGET - (Date.now() - startedAt)))
+    const timer = setTimeout(() => controller.abort(), remaining)
 
     try {
       const res = await fetch(url, {

@@ -18,12 +18,16 @@ export async function GET(request: Request) {
       return new NextResponse('Domain not allowed', { status: 403 })
     }
 
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 10000)
     const res = await fetch(url, {
       headers: {
         'Referer': 'https://komiku.org/',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       },
+      signal: controller.signal,
     })
+    clearTimeout(timer)
 
     if (!res.ok) {
       return new NextResponse('Image fetch failed', { status: res.status })

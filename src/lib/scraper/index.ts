@@ -1,8 +1,10 @@
 import { cacheGet, cacheGetStale, cacheSet } from './cache'
+import { NotFoundError } from './config'
+export { NotFoundError }
 import type {
   HomeData, AnimeCard, AnimeDetail, EpisodeData, Genre, PaginatedResult,
   MangaCard, MangaDetail, MangaChapterData,
-  FilmCard, FilmDetail,
+  FilmCard, FilmDetail, StreamingSource,
 } from '@/types'
 import {
   getCurrentSeasonAnime,
@@ -18,6 +20,17 @@ import {
   type JikanAnime,
 } from './anilist-client'
 import {
+  getCineRoomMovies,
+  getCineRoomSeries,
+  getCineRoomMovie,
+  getCineRoomSeriesDetail as fetchCineRoomSeriesDetail,
+  searchCineRoom,
+  cineImageUrl,
+  cineRoomWatchUrl,
+  type CineRoomMovie,
+  type CineRoomSeries,
+} from './cineroom-client'
+import {
   getLatestManga as fetchLatestManga,
   getPopularManga as fetchPopularManga,
   getMangaDetail as fetchMangaDetail,
@@ -31,6 +44,7 @@ import {
   matchAnimeByTitles,
 } from './otakudesu-client'
 import { getAnimasuEpisodeSources } from './animasu-client'
+import { withTimeout } from './fetcher'
 import {
   getLK21Latest,
   getLK21Genre,
@@ -112,38 +126,31 @@ export async function getHome(): Promise<HomeData> {
   const cached = cacheGet<HomeData>(key)
   if (cached) return cached
 
-  try {
-    const ongoingRes = await getCurrentSeasonAnime(1, 12)
-    const completedRes = await getCompletedAnime(1, 12)
-    const moviesRes = await getTopMovies(1, 12)
+  // The five sources are independent, so fan them out and bound each one. Run
+  // sequentially a cold start summed every source's latency (30s+); bounded and
+  // parallel the whole call finishes in roughly the slowest single source.
+  const [ongoing, completed, movies, manga, films] = await Promise.all([
+    withTimeout(getCurrentSeasonAnime(1, 12), 8000, null),
+    withTimeout(getCompletedAnime(1, 12), 8000, null),
+    withTimeout(getTopMovies(1, 12), 8000, null),
+    withTimeout(fetchPopularManga(1), 8000, [] as MangaCard[]),
+    withTimeout(getLK21Latest(1), 8000, [] as LK21Movie[]),
+  ])
 
-    let manga: MangaCard[] = []
-    try {
-      const mangaRes = await fetchPopularManga(1)
-      manga = mangaRes.slice(0, 12)
-    } catch {}
+  const data: HomeData = {
+    ongoing: (ongoing?.data ?? []).map(toAnimeCard),
+    completed: (completed?.data ?? []).map(toAnimeCard),
+    movies: (movies?.data ?? []).map(toAnimeCard),
+    manga: (manga ?? []).slice(0, 12),
+    films: (films ?? []).slice(0, 12).map(toFilmCard),
+  }
 
-    let films: FilmCard[] = []
-    try {
-      const lk21Res = await getLK21Latest(1)
-      films = lk21Res.slice(0, 12).map(toFilmCard)
-    } catch {}
-
-    const data: HomeData = {
-      ongoing: ongoingRes.data.map(toAnimeCard),
-      completed: completedRes.data.map(toAnimeCard),
-      movies: moviesRes.data.map(toAnimeCard),
-      manga,
-      films,
-    }
-
+  // Only serve partial data if it carries something; otherwise prefer stale.
+  if (data.ongoing.length > 0 || data.completed.length > 0) {
     cacheSet(key, data, TTL.HOME)
     return data
-  } catch {
-    const stale = cacheGetStale<HomeData>(key)
-    if (stale) return stale
-    return { ongoing: [], completed: [], movies: [], manga: [], films: [] }
   }
+  return cacheGetStale<HomeData>(key) ?? data
 }
 
 export async function getOngoing(page: number): Promise<PaginatedResult<AnimeCard>> {
@@ -232,14 +239,19 @@ export async function getAnimeDetail(slug: string): Promise<AnimeDetail> {
   if (cached) return cached
 
   const malId = parseInt(slug.replace('anime-', ''), 10)
-  if (isNaN(malId)) throw new Error('Invalid anime slug')
+  if (isNaN(malId)) throw new NotFoundError('Anime not found')
 
   try {
     const res = await getAnimeById(malId)
     const data = toAnimeDetail(res.data)
     cacheSet(key, data, TTL.DETAIL)
     return data
-  } catch {
+  } catch (err) {
+    if (err instanceof NotFoundError) {
+      const stale = cacheGetStale<AnimeDetail>(key)
+      if (stale) return stale
+      throw new NotFoundError('Anime not found')
+    }
     const stale = cacheGetStale<AnimeDetail>(key)
     if (stale) return stale
     throw new Error('Failed to load anime detail')
@@ -251,8 +263,8 @@ export async function getEpisode(slug: string): Promise<EpisodeData> {
   const cached = cacheGet<EpisodeData>(key)
   if (cached) return cached
 
-  const match = slug.match(/anime-(\d+)-episode-(\d+)/)
-  if (!match) throw new Error('Invalid episode slug')
+  const match = slug.match(/^anime-(\d+)-episode-(\d+)$/)
+  if (!match) throw new NotFoundError('Episode not found')
 
   const malId = parseInt(match[1], 10)
   const episodeNum = parseInt(match[2], 10)
@@ -267,11 +279,16 @@ export async function getEpisode(slug: string): Promise<EpisodeData> {
       ...(anime.title_synonyms || []),
     ].filter(Boolean) as string[]
 
-    let sources = cacheGet<EpisodeData>(`episode-sources:${slug}`)?.sources || []
+    const cachedSources = cacheGet<EpisodeData>(`episode-sources:${slug}`)?.sources || []
 
-    // Source 1 — otakudesu (fuzzy-matched against its full title index, which
-    // has a far higher hit rate than its weak ?s= search).
-    if (sources.length === 0) {
+    // Scraper chain, bounded as a whole. Each scraper is itself retried with its
+    // own budget, so without this outer cap a chain of misses could run for over
+    // a minute; the fallback below is always cheap and always available.
+    const scrapeSources = async (): Promise<StreamingSource[]> => {
+      let found: StreamingSource[] = []
+
+      // Source 1 — otakudesu (fuzzy-matched against its full title index, which
+      // has a far higher hit rate than its weak ?s= search).
       try {
         const animeUrl = await matchAnimeByTitles(candidateTitles)
         if (animeUrl) {
@@ -280,42 +297,51 @@ export async function getEpisode(slug: string): Promise<EpisodeData> {
             const m = ep.title.match(/episode\s*(\d+)/i)
             return m && parseInt(m[1], 10) === episodeNum
           })
-          if (target) sources = await getStreamingSources(target.url)
+          if (target) found = await getStreamingSources(target.url)
         }
-        if (sources.length === 0) {
+        if (found.length === 0) {
           const searchTitle = anime.title_english || anime.title
           const episodeUrl = await findEpisodeUrl(searchTitle, episodeNum)
-          if (episodeUrl) sources = await getStreamingSources(episodeUrl)
-          if (sources.length === 0 && anime.title !== searchTitle) {
+          if (episodeUrl) found = await getStreamingSources(episodeUrl)
+          if (found.length === 0 && anime.title !== searchTitle) {
             const episodeUrl2 = await findEpisodeUrl(anime.title, episodeNum)
-            if (episodeUrl2) sources = await getStreamingSources(episodeUrl2)
+            if (episodeUrl2) found = await getStreamingSources(episodeUrl2)
           }
         }
       } catch {
         // otakudesu unreachable, try the next source
       }
+
+      // Source 2 — animasu (covers many titles otakudesu lacks; native 480/720/
+      // 1080p quality). animasu serves a Cloudflare JS-challenge to datacenter IPs
+      // (incl. Vercel) but not to Indonesian residential IPs, so it only works when
+      // fetchHTML is routed through an Indonesian residential proxy. Gated off by
+      // default to avoid wasted 403 latency; set ENABLE_ANIMASU=1 (with a proxy) to
+      // activate.
+      if (found.length === 0 && process.env.ENABLE_ANIMASU === '1') {
+        try {
+          found = await getAnimasuEpisodeSources(candidateTitles, episodeNum)
+        } catch {
+          // animasu unreachable, fall through to embeds
+        }
+      }
+
+      return found
     }
 
-    // Source 2 — animasu (covers many titles otakudesu lacks; native 480/720/
-    // 1080p quality). animasu serves a Cloudflare JS-challenge to datacenter IPs
-    // (incl. Vercel) but not to Indonesian residential IPs, so it only works when
-    // fetchHTML is routed through an Indonesian residential proxy. Gated off by
-    // default to avoid wasted 403 latency; set ENABLE_ANIMASU=1 (with a proxy) to
-    // activate.
-    if (sources.length === 0 && process.env.ENABLE_ANIMASU === '1') {
-      try {
-        sources = await getAnimasuEpisodeSources(candidateTitles, episodeNum)
-      } catch {
-        // animasu unreachable, fall through to embeds
-      }
+    let sources = cachedSources
+    if (sources.length === 0) {
+      sources = await withTimeout(scrapeSources(), 8000, [] as StreamingSource[])
     }
 
     if (sources.length === 0) {
-      // Neither scraper carries this title; fall back to MAL-mapped embeds
-      // reachable from Indonesian ISPs (vidsrc.cc is DNS-blocked there).
+      // Neither scraper carries this title (or ran out of budget); fall back to
+      // MAL-mapped embeds reachable from Indonesian ISPs (vidsrc.cc is DNS-blocked
+      // there). vidnest first: vidlink.pro root returns 403 from datacenter IPs, so
+      // it often renders blank when chosen as the default first server.
       sources.push(
-        { label: 'Server 1', quality: 'HD', server: 1, src: `https://vidlink.pro/anime/${malId}/${episodeNum}/sub?fallback=true`, noSandbox: true },
-        { label: 'Server 2', quality: 'HD', server: 2, src: `https://vidnest.fun/anime/${malId}/${episodeNum}/sub`, noSandbox: true },
+        { label: 'Server 1', quality: 'HD', server: 1, src: `https://vidnest.fun/anime/${malId}/${episodeNum}/sub`, noSandbox: true },
+        { label: 'Server 2', quality: 'HD', server: 2, src: `https://vidlink.pro/anime/${malId}/${episodeNum}/sub?fallback=true`, noSandbox: true },
       )
     }
 
@@ -330,9 +356,10 @@ export async function getEpisode(slug: string): Promise<EpisodeData> {
 
     cacheSet(key, data, TTL.EPISODE)
     return data
-  } catch {
+  } catch (err) {
     const stale = cacheGetStale<EpisodeData>(key)
     if (stale) return stale
+    if (err instanceof NotFoundError) throw new NotFoundError('Episode not found')
     throw new Error('Failed to load episode')
   }
 }
@@ -490,27 +517,69 @@ export async function searchManga(query: string): Promise<MangaCard[]> {
   }
 }
 
-// --- Film functions (LK21) ---
+// --- Film functions (LK21 + CineRoom) ---
+
+// CineRoom catalogue slugs use `<title>-<year>` (e.g. the-storm-2026); LK21
+// slugs use `movie-<tmdbId>`. Prefix tells getFilmDetail which client to hit.
+function cineMovieToCard(m: CineRoomMovie): FilmCard {
+  return {
+    title: m.title,
+    slug: `cine-${m.slug}`,
+    image: cineImageUrl(m.posterPath),
+    year: m.releaseDate?.substring(0, 4),
+    quality: m.quality || 'HD',
+    rating: m.voteAverage && m.voteAverage !== '0' ? `⭐ ${Number(m.voteAverage).toFixed(1)}` : undefined,
+    genre: m.genres?.map((g) => g.name).join(', ') || undefined,
+  }
+}
+
+function cineSeriesToCard(s: CineRoomSeries): FilmCard {
+  return {
+    title: s.title,
+    slug: `cine-series-${s.slug}`,
+    image: cineImageUrl(s.posterPath),
+    year: s.firstAirDate?.substring(0, 4),
+    quality: 'HD',
+    episode: s.numberOfEpisodes ? `${s.numberOfEpisodes} Episodes` : undefined,
+    rating: s.voteAverage && s.voteAverage !== '0' ? `⭐ ${Number(s.voteAverage).toFixed(1)}` : undefined,
+    genre: s.genres?.map((g) => g.name).join(', ') || undefined,
+  }
+}
 
 export async function getFilmList(page: number): Promise<PaginatedResult<FilmCard>> {
   const key = `film-list:${page}`
   const cached = cacheGet<PaginatedResult<FilmCard>>(key)
   if (cached) return cached
 
+  // Merge TMDB trending (LK21 client) with the CineRoom catalogue: half
+  // movies, half series, so both surfaces show up on the film page.
+  const results: FilmCard[] = []
   try {
-    const data = await getLK21Latest(page)
+    const [lk21, cineMovies, cineSeries] = await Promise.all([
+      getLK21Latest(page).catch(() => [] as LK21Movie[]),
+      getCineRoomMovies(page, 12).catch(() => [] as CineRoomMovie[]),
+      getCineRoomSeries(page, 12).catch(() => [] as CineRoomSeries[]),
+    ])
+    results.push(...lk21.slice(0, 20).map(toFilmCard))
+    results.push(...cineMovies.map(cineMovieToCard))
+    results.push(...cineSeries.map(cineSeriesToCard))
+  } catch {
+    // fall through to stale/empty below
+  }
+
+  if (results.length > 0) {
     const result: PaginatedResult<FilmCard> = {
-      data: data.map(toFilmCard),
+      data: results,
       currentPage: page,
-      hasNextPage: data.length >= 20,
+      hasNextPage: results.length >= 20,
     }
     cacheSet(key, result, TTL.FILM)
     return result
-  } catch {
-    const stale = cacheGetStale<PaginatedResult<FilmCard>>(key)
-    if (stale) return stale
-    return { data: [], currentPage: page, hasNextPage: false }
   }
+
+  const stale = cacheGetStale<PaginatedResult<FilmCard>>(key)
+  if (stale) return stale
+  return { data: [], currentPage: page, hasNextPage: false }
 }
 
 export async function getFilmGenre(genre: string, page: number): Promise<PaginatedResult<FilmCard>> {
@@ -535,6 +604,75 @@ export async function getFilmGenre(genre: string, page: number): Promise<Paginat
 }
 
 export async function getFilmDetail(slug: string): Promise<FilmDetail> {
+  // CineRoom items: cine-<slug> (movie) or cine-series-<slug> (series).
+  // Playback stays on the CineRoom site (their stream is deliberately gated);
+  // the player embed is replaced by an external link in the film detail page.
+  if (slug.startsWith('cine-series-')) {
+    const cineSlug = slug.replace('cine-series-', '')
+    const key = `film-detail:${slug}`
+    const cached = cacheGet<FilmDetail>(key)
+    if (cached) return cached
+
+    const s = await fetchCineRoomSeriesDetail(cineSlug)
+    if (!s) throw new Error('Series not found on CineRoom')
+
+    const result: FilmDetail = {
+      title: s.title,
+      image: cineImageUrl(s.posterPath),
+      synopsis: s.overview || 'No synopsis available.',
+      year: s.firstAirDate?.substring(0, 4),
+      genre: s.genres?.map((g) => g.name).join(', ') || undefined,
+      rating: s.voteAverage && s.voteAverage !== '0' ? Number(s.voteAverage).toFixed(1) : undefined,
+      quality: 'HD',
+      // External deep link: opens on CineRoom with their own ad-free player.
+      sources: [
+        {
+          label: 'Nonton di CineRoom',
+          quality: 'HD',
+          server: 1,
+          src: cineRoomWatchUrl(cineSlug, true),
+          noSandbox: true,
+          external: true,
+        },
+      ],
+    }
+    cacheSet(key, result, TTL.FILM_DETAIL)
+    return result
+  }
+
+  if (slug.startsWith('cine-')) {
+    const cineSlug = slug.replace('cine-', '')
+    const key = `film-detail:${slug}`
+    const cached = cacheGet<FilmDetail>(key)
+    if (cached) return cached
+
+    const m = await getCineRoomMovie(cineSlug)
+    if (!m) throw new Error('Movie not found on CineRoom')
+
+    const result: FilmDetail = {
+      title: m.title,
+      image: cineImageUrl(m.backdropPath) || cineImageUrl(m.posterPath),
+      synopsis: m.overview || 'No synopsis available.',
+      year: m.releaseDate?.substring(0, 4),
+      genre: m.genres?.map((g) => g.name).join(', ') || undefined,
+      rating: m.voteAverage && m.voteAverage !== '0' ? Number(m.voteAverage).toFixed(1) : undefined,
+      duration: m.runtime ? `${m.runtime} min` : undefined,
+      quality: m.quality || 'HD',
+      sources: [
+        {
+          label: 'Nonton di CineRoom',
+          quality: 'HD',
+          server: 1,
+          src: cineRoomWatchUrl(cineSlug, false),
+          noSandbox: true,
+          external: true,
+        },
+      ],
+    }
+    cacheSet(key, result, TTL.FILM_DETAIL)
+    return result
+  }
+
   const key = `film-detail:${slug}`
   const cached = cacheGet<FilmDetail>(key)
   if (cached) return cached
@@ -566,14 +704,27 @@ export async function searchFilm(query: string): Promise<FilmCard[]> {
   const cached = cacheGet<FilmCard[]>(key)
   if (cached) return cached
 
+  const results: FilmCard[] = []
   try {
-    const data = await fetchSearchLK21(query)
-    const result = data.map(toFilmCard)
-    cacheSet(key, result, TTL.SEARCH)
-    return result
+    const [lk21, cine] = await Promise.all([
+      fetchSearchLK21(query).catch(() => [] as LK21Movie[]),
+      searchCineRoom(query).catch(() => [] as Array<CineRoomMovie | CineRoomSeries>),
+    ])
+    results.push(...lk21.map(toFilmCard))
+    for (const item of cine) {
+      if ('firstAirDate' in item) {
+        results.push(cineSeriesToCard(item))
+      } else {
+        results.push(cineMovieToCard(item))
+      }
+    }
   } catch {
-    const stale = cacheGetStale<FilmCard[]>(key)
-    if (stale) return stale
-    return []
+    // fall through
   }
+
+  if (results.length > 0) {
+    cacheSet(key, results, TTL.SEARCH)
+    return results
+  }
+  return []
 }

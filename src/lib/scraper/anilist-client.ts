@@ -7,9 +7,14 @@
 // which 504'd every anime API route. graphql.anilist.co is fast (~400ms) and
 // exposes idMal, so MAL-based slugs (anime-<mal_id>) still resolve.
 
+import { NotFoundError } from './config'
+
 const ANILIST_URL = 'https://graphql.anilist.co'
-const FETCH_TIMEOUT = 8000
+const FETCH_TIMEOUT = 6000
 const MAX_RETRIES = 2
+// Ceiling for the whole call including backoff, so a hung AniList cannot stall
+// the caller past its route budget.
+const TOTAL_BUDGET = 9000
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -17,9 +22,14 @@ function delay(ms: number): Promise<void> {
 
 async function gql<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
   let lastErr: unknown
+  const startedAt = Date.now()
+
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const remaining = TOTAL_BUDGET - (Date.now() - startedAt)
+    if (remaining <= 500) break
+
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT)
+    const timer = setTimeout(() => controller.abort(), Math.min(FETCH_TIMEOUT, remaining))
     try {
       const res = await fetch(ANILIST_URL, {
         method: 'POST',
@@ -29,12 +39,17 @@ async function gql<T>(query: string, variables: Record<string, unknown> = {}): P
         cache: 'no-store',
       })
       clearTimeout(timer)
+      // AniList answers an unknown idMal with HTTP 404 and data:null. That is a
+      // missing title, not a transient fault, so surface it distinctly and do
+      // not burn a retry on it.
+      if (res.status === 404) throw new NotFoundError('Not found on AniList')
       if (res.status === 429 || res.status >= 500) {
+        lastErr = new Error(`AniList error: ${res.status}`)
         if (attempt < MAX_RETRIES - 1) {
-          await delay(800 * Math.pow(2, attempt))
+          await delay(Math.min(800 * Math.pow(2, attempt), Math.max(0, TOTAL_BUDGET - (Date.now() - startedAt))))
           continue
         }
-        throw new Error(`AniList error: ${res.status}`)
+        throw lastErr
       }
       if (!res.ok) throw new Error(`AniList error: ${res.status}`)
       const json = await res.json()
@@ -43,8 +58,8 @@ async function gql<T>(query: string, variables: Record<string, unknown> = {}): P
     } catch (e) {
       clearTimeout(timer)
       lastErr = e
-      if (attempt === MAX_RETRIES - 1) throw e
-      await delay(800 * Math.pow(2, attempt))
+      if (e instanceof NotFoundError || attempt === MAX_RETRIES - 1) throw e
+      await delay(Math.min(800 * Math.pow(2, attempt), Math.max(0, TOTAL_BUDGET - (Date.now() - startedAt))))
     }
   }
   throw lastErr instanceof Error ? lastErr : new Error('AniList: max retries exceeded')
@@ -94,6 +109,7 @@ interface AniListMedia {
   description: string | null
   format: string | null
   episodes: number | null
+  nextAiringEpisode: { episode: number } | null
   status: string | null
   averageScore: number | null
   studios: { nodes: Array<{ name: string }> } | null
@@ -118,6 +134,7 @@ const MEDIA_FIELDS = `
   description(asHtml: false)
   format
   episodes
+  nextAiringEpisode { episode }
   status
   averageScore
   studios(isMain: true) { nodes { name } }
@@ -179,7 +196,9 @@ function toJikan(m: AniListMedia): JikanAnime {
     },
     synopsis: stripHtml(m.description),
     type: mapFormat(m.format),
-    episodes: m.episodes,
+    // Ongoing shows report episodes: null on AniList; the next airing episode
+    // number is the reliable total (One Piece -> 1181, not the old `|| 12`).
+    episodes: m.episodes ?? m.nextAiringEpisode?.episode ?? null,
     status: mapStatus(m.status),
     rating: m.averageScore ? `Rating: ${m.averageScore}%` : 'Rating: N/A',
     score: m.averageScore ? m.averageScore / 10 : 0,
@@ -269,7 +288,8 @@ query ($idMal: Int) {
 }
 `
   const d = await gql<{ Media: AniListMedia | null }>(q, { idMal: id })
-  if (!d.Media) throw new Error(`AniList: no MAL mapping for ${id}`)
+  // AniList also resolves some ids to a null Media without a 404.
+  if (!d.Media) throw new NotFoundError(`No AniList entry for MAL id ${id}`)
   return { data: toJikan(d.Media) }
 }
 

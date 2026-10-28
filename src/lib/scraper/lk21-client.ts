@@ -3,8 +3,10 @@ import type { StreamingSource } from '@/types'
 const TMDB_KEY = '2dca580c2a14b55200e784d157207b4d'
 const TMDB_BASE = 'https://api.themoviedb.org/3'
 const TMDB_IMG = 'https://image.tmdb.org/t/p/w500'
-const FETCH_TIMEOUT = 15000
+const FETCH_TIMEOUT = 10000
 const MAX_RETRIES = 3
+// Ceiling for the whole call including backoff (3 x 15s + backoff was 45s+).
+const TOTAL_BUDGET = 12000
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -13,10 +15,15 @@ function delay(ms: number): Promise<void> {
 async function tmdbFetch<T>(path: string): Promise<T> {
   const separator = path.includes('?') ? '&' : '?'
   const url = `${TMDB_BASE}${path}${separator}api_key=${TMDB_KEY}&language=id-ID`
+  const startedAt = Date.now()
+  let lastErr: unknown
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const remaining = TOTAL_BUDGET - (Date.now() - startedAt)
+    if (remaining <= 500) break
+
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT)
+    const timer = setTimeout(() => controller.abort(), Math.min(FETCH_TIMEOUT, remaining))
     try {
       const res = await fetch(url, {
         signal: controller.signal,
@@ -26,22 +33,27 @@ async function tmdbFetch<T>(path: string): Promise<T> {
       if (res.status === 429) {
         if (attempt < MAX_RETRIES - 1) {
           const retryAfter = parseInt(res.headers.get('Retry-After') || '2', 10)
-          await delay(retryAfter * 1000)
+          await delay(Math.min(retryAfter * 1000, Math.max(0, TOTAL_BUDGET - (Date.now() - startedAt))))
           continue
         }
       }
       if (!res.ok) {
-        if (attempt < MAX_RETRIES - 1) { await delay(1000 * Math.pow(2, attempt)); continue }
-        throw new Error(`TMDB HTTP ${res.status}`)
+        lastErr = new Error(`TMDB HTTP ${res.status}`)
+        if (attempt < MAX_RETRIES - 1) {
+          await delay(Math.min(1000 * Math.pow(2, attempt), Math.max(0, TOTAL_BUDGET - (Date.now() - startedAt))))
+          continue
+        }
+        throw lastErr
       }
       return await res.json()
     } catch (e) {
       clearTimeout(timer)
+      lastErr = e
       if (attempt === MAX_RETRIES - 1) throw e
-      await delay(1000 * Math.pow(2, attempt))
+      await delay(Math.min(1000 * Math.pow(2, attempt), Math.max(0, TOTAL_BUDGET - (Date.now() - startedAt))))
     }
   }
-  throw new Error('TMDB: max retries exceeded')
+  throw lastErr instanceof Error ? lastErr : new Error('TMDB: max retries exceeded')
 }
 
 interface TMDBMovie {
