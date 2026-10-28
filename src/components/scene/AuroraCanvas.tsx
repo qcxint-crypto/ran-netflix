@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Canvas, useFrame, useThree, invalidate } from '@react-three/fiber'
 import * as THREE from 'three'
 
@@ -23,6 +23,7 @@ const FRAGMENT = /* glsl */ `
   uniform float uTime;
   uniform vec2 uResolution;
   uniform float uIntensity;
+  uniform vec2 uPointer;
   varying vec2 vUv;
 
   float hash(vec2 p) {
@@ -56,8 +57,12 @@ const FRAGMENT = /* glsl */ `
     float t = uTime * 0.06;
 
     // Blob centres: violet top-left, teal top-right, gold low-centre.
-    float violet = smoothstep(0.72, 0.0, distance(uv, vec2(0.22, 1.35)) + grain * 0.34 - t * 0.16);
-    float teal   = smoothstep(0.60, 0.0, distance(uv, vec2(1.62, 1.62)) + grain * 0.30 + t * 0.12);
+    // uPointer offsets violet/teal slightly for subtle parallax.
+    vec2 violetCenter = vec2(0.22, 1.35) + uPointer * vec2(0.08, 0.05);
+    vec2 tealCenter   = vec2(1.62, 1.62) + uPointer * vec2(0.06, -0.04);
+
+    float violet = smoothstep(0.72, 0.0, distance(uv, violetCenter) + grain * 0.34 - t * 0.16);
+    float teal   = smoothstep(0.60, 0.0, distance(uv, tealCenter) + grain * 0.30 + t * 0.12);
     float gold   = smoothstep(0.66, 0.0, distance(uv, vec2(0.95, -0.28)) + grain * 0.26 - t * 0.09);
 
     vec3 color = vec3(0.0);
@@ -80,24 +85,42 @@ const FRAGMENT = /* glsl */ `
 
 function AuroraPlane({ intensity }: { intensity: number }) {
   const { viewport } = useThree()
+  const pointerRef = useRef({ x: 0, y: 0 })
 
   const uniforms = useMemo(
     () => ({
       uTime: { value: 0 },
       uResolution: { value: new THREE.Vector2(1, 1) },
       uIntensity: { value: intensity },
+      uPointer: { value: new THREE.Vector2(0, 0) },
     }),
     // Intensity only ever changes if the caller re-renders with a new value.
     [intensity],
   )
 
   useEffect(() => {
+    const onMove = (event: PointerEvent) => {
+      pointerRef.current.x = (event.clientX / window.innerWidth) * 2 - 1
+      pointerRef.current.y = (event.clientY / window.innerHeight) * 2 - 1
+    }
+    window.addEventListener('pointermove', onMove, { passive: true })
+    return () => window.removeEventListener('pointermove', onMove)
+  }, [])
+
+  useEffect(() => {
     uniforms.uResolution.value.set(viewport.width, viewport.height)
     invalidate()
   }, [uniforms, viewport.width, viewport.height])
 
-  useFrame((state) => {
-    uniforms.uTime.value = state.clock.elapsedTime
+  useFrame((_, delta) => {
+    uniforms.uTime.value += delta
+    // Lerp pointer uniform in place — no new Vector2 per frame.
+    const k = 1 - Math.pow(0.0015, Math.min(delta, 0.1))
+    const uPtr = uniforms.uPointer.value
+    const targetX = pointerRef.current.x * 0.08
+    const targetY = pointerRef.current.y * 0.05
+    uPtr.x += (targetX - uPtr.x) * k
+    uPtr.y += (targetY - uPtr.y) * k
   })
 
   return (
@@ -107,6 +130,7 @@ function AuroraPlane({ intensity }: { intensity: number }) {
         vertexShader={VERTEX}
         fragmentShader={FRAGMENT}
         uniforms={uniforms}
+        transparent
         depthTest={false}
         depthWrite={false}
       />
@@ -134,8 +158,9 @@ function Ticker({ fps }: { fps: number }) {
 export default function AuroraCanvas({ intensity = 1, fps = 30 }: { intensity?: number; fps?: number }) {
   return (
     <Canvas
-      // A blurred gradient needs no extra pixels — 1x is indistinguishable.
-      dpr={[1, 1]}
+      // 1.5 DPR cap — subtle gradient still benefits from a bit more sharpness
+      // on high-DPI without the cost of the hero's poster wall.
+      dpr={[1, 1.5]}
       frameloop="demand"
       orthographic
       camera={{ position: [0, 0, 1], zoom: 1 }}

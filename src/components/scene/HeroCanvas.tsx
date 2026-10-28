@@ -7,6 +7,30 @@ import { useIsDesktop, usePointer, useVisibilityFrameloop } from '@/lib/motion'
 
 type PointerRef = MutableRefObject<{ x: number; y: number }>
 
+// --- Module constants (outside component to avoid per-render alloc) ---------
+
+const FOG_ARGS: [string, number, number] = ['#07070c', 9, 30]
+
+const LIGHTS = {
+  ambientIntensity: 0.7,
+  directional: { position: [5, 6, 4] as [number, number, number], intensity: 1.6 },
+  gold: {
+    position: [-7, 2, 3] as [number, number, number],
+    intensity: 38,
+    distance: 26,
+    color: '#e8b04b',
+  },
+  violet: {
+    position: [8, -1.5, 2] as [number, number, number],
+    intensity: 30,
+    distance: 24,
+    color: '#7c5cff',
+  },
+} as const
+
+// Zero-alloc look target reused every frame inside Rig — no new Vector3 in useFrame.
+const TARGET_LOOK = new THREE.Vector3(0, 0, -4)
+
 // --- Poster textures -------------------------------------------------------
 
 /**
@@ -99,6 +123,8 @@ function usePlaceholderTexture(): THREE.Texture {
 function Starfield({ count }: { count: number }) {
   const ref = useRef<THREE.Points>(null)
 
+  // Memoized once — avoids reallocating Float32Array on every render.
+  // BufferGeometry is auto-disposed by R3F when the component unmounts.
   const positions = useMemo(() => {
     const array = new Float32Array(count * 3)
     for (let i = 0; i < count; i++) {
@@ -140,6 +166,7 @@ function Poster({
   phase,
   depth,
   pointer,
+  sharedGeometry,
 }: {
   texture: THREE.Texture | null
   placeholder: THREE.Texture
@@ -148,6 +175,7 @@ function Poster({
   phase: number
   depth: number
   pointer: PointerRef
+  sharedGeometry: THREE.PlaneGeometry
 }) {
   const ref = useRef<THREE.Mesh>(null)
 
@@ -164,7 +192,7 @@ function Poster({
 
   return (
     <mesh ref={ref} position={position} rotation={rotation}>
-      <planeGeometry args={[1.55, 2.16]} />
+      <primitive object={sharedGeometry} attach="geometry" />
       <meshStandardMaterial
         map={texture ?? placeholder}
         roughness={0.62}
@@ -182,6 +210,15 @@ function PosterWall({ urls, pointer }: { urls: string[]; pointer: PointerRef }) 
   const textures = usePosterTextures(urls)
   const placeholder = usePlaceholderTexture()
   const count = urls.length
+
+  // Shared single PlaneGeometry — 7 posters reuse one GPU allocation.
+  const sharedGeometry = useMemo(() => new THREE.PlaneGeometry(1.55, 2.16), [])
+
+  useEffect(() => {
+    return () => {
+      sharedGeometry.dispose()
+    }
+  }, [sharedGeometry])
 
   const posters = useMemo(
     () =>
@@ -213,6 +250,7 @@ function PosterWall({ urls, pointer }: { urls: string[]; pointer: PointerRef }) 
           phase={poster.phase}
           depth={poster.depth}
           pointer={pointer}
+          sharedGeometry={sharedGeometry}
         />
       ))}
     </group>
@@ -222,10 +260,12 @@ function PosterWall({ urls, pointer }: { urls: string[]; pointer: PointerRef }) 
 /**
  * Eases the whole wall and the camera toward the pointer. The lerp factor is
  * derived from delta so the motion feels identical at 60 and 144 Hz.
+ * Zero alloc per frame: reuses TARGET_LOOK for lookAt and does arithmetic
+ * lerp inline instead of creating new Vector3.
  */
 function Rig({ pointer, children }: { pointer: PointerRef; children: React.ReactNode }) {
   const ref = useRef<THREE.Group>(null)
-  const { camera } = useThree()
+  const { camera, gl } = useThree()
 
   useFrame((_, delta) => {
     const k = 1 - Math.pow(0.0015, Math.min(delta, 0.1))
@@ -237,7 +277,12 @@ function Rig({ pointer, children }: { pointer: PointerRef; children: React.React
     }
     camera.position.x += (pointer.current.x * 0.85 - camera.position.x) * k * 0.7
     camera.position.y += (-pointer.current.y * 0.5 - camera.position.y) * k * 0.7
-    camera.lookAt(0, 0, -4)
+    camera.lookAt(TARGET_LOOK)
+
+    // Manually reset info because autoReset is disabled in onCreated.
+    // Keeps the gl.info counters from growing unbounded and mirrors
+    // three.js best practice when autoReset is off.
+    gl.info.reset()
   })
 
   return <group ref={ref}>{children}</group>
@@ -258,15 +303,55 @@ export default function HeroCanvas({ posters }: { posters: string[] }) {
       dpr={[1, 1.5]}
       frameloop={frameloop}
       camera={{ position: [0, 0, 5], fov: 75, near: 0.1, far: 60 }}
-      gl={{ alpha: true, antialias: true, powerPreference: 'high-performance' }}
+      // SSB: scene settings bridge — explicitly configure renderer flags that
+      // affect the shared WebGL context. No shadows needed for a backdrop,
+      // stencil is unused, preserveDrawingBuffer off to allow buffer reuse.
+      gl={{
+        alpha: true,
+        antialias: true,
+        stencil: false,
+        depth: true,
+        preserveDrawingBuffer: false,
+        powerPreference: 'high-performance',
+        failIfMajorPerformanceCaveat: false,
+      }}
       style={{ pointerEvents: 'none' }}
+      onCreated={(state) => {
+        state.gl.info.autoReset = false
+        state.gl.shadowMap.enabled = false
+        state.gl.outputColorSpace = THREE.SRGBColorSpace
+        state.gl.toneMapping = THREE.NoToneMapping
+        try {
+          // Warm compile — synchronous best-effort, then async in background.
+          // Prevents first-frame hitch by uploading shaders before first render.
+          ;(state.gl as any).compile?.(state.scene, state.camera)
+          ;(state.gl as any).compileAsync?.(state.scene, state.camera)
+            .then(() => {})
+            .catch(() => {})
+        } catch {
+          // compile may throw if scene not fully ready; safe to ignore.
+        }
+      }}
     >
-      <fog attach="fog" args={['#07070c', 9, 30]} />
-      <ambientLight intensity={0.7} />
-      <directionalLight position={[5, 6, 4]} intensity={1.6} />
+      <fog attach="fog" args={FOG_ARGS} />
+      <ambientLight intensity={LIGHTS.ambientIntensity} />
+      <directionalLight
+        position={LIGHTS.directional.position}
+        intensity={LIGHTS.directional.intensity}
+      />
       {/* Gold key light and violet rim light — the two accents of the palette. */}
-      <pointLight position={[-7, 2, 3]} intensity={38} distance={26} color="#e8b04b" />
-      <pointLight position={[8, -1.5, 2]} intensity={30} distance={24} color="#7c5cff" />
+      <pointLight
+        position={LIGHTS.gold.position}
+        intensity={LIGHTS.gold.intensity}
+        distance={LIGHTS.gold.distance}
+        color={LIGHTS.gold.color}
+      />
+      <pointLight
+        position={LIGHTS.violet.position}
+        intensity={LIGHTS.violet.intensity}
+        distance={LIGHTS.violet.distance}
+        color={LIGHTS.violet.color}
+      />
       <Rig pointer={pointer}>
         <Starfield count={isDesktop ? 1400 : 500} />
         <PosterWall urls={urls} pointer={pointer} />
