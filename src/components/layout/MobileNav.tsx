@@ -49,6 +49,15 @@ const navItems = [
       </svg>
     ),
   },
+  {
+    href: '/my-list',
+    label: 'My List',
+    icon: () => (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17.593 3.322c.1.128.157.287.157.45v17.356a.75.75 0 01-1.174.62l-4.826-3.223-4.826 3.223a.75.75 0 01-1.174-.62V3.772c0-.163.057-.322.157-.45A2.25 2.25 0 017.5 2.25h9a2.25 2.25 0 011.093 1.072z" />
+      </svg>
+    ),
+  },
 ]
 
 export default function MobileNav() {

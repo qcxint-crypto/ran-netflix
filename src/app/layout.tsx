@@ -6,6 +6,7 @@ import Navbar from '@/components/layout/Navbar'
 import MobileNav from '@/components/layout/MobileNav'
 import Footer from '@/components/layout/Footer'
 import AuroraBackground from '@/components/scene/AuroraBackground'
+import { WatchlistProvider } from '@/components/watchlist/WatchlistProvider'
 
 // Sora for display headings (geometric, cinematic), Manrope for body copy.
 const sora = Sora({ subsets: ['latin'], variable: '--font-display', display: 'swap' })
@@ -27,12 +28,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="id" className={`dark ${sora.variable} ${manrope.variable}`}>
       <body className="font-sans min-h-screen bg-background">
-        {/* One shared canvas for the whole app, fixed behind everything. */}
-        <AuroraBackground />
-        <Navbar />
-        <main className="relative z-10 min-h-screen pb-20 md:pb-0">{children}</main>
-        <Footer />
-        <MobileNav />
+        <WatchlistProvider>
+          {/* One shared canvas for the whole app, fixed behind everything. */}
+          <AuroraBackground />
+          <Navbar />
+          <main className="relative z-10 min-h-screen pb-20 md:pb-0">{children}</main>
+          <Footer />
+          <MobileNav />
+        </WatchlistProvider>
       </body>
     </html>
   )

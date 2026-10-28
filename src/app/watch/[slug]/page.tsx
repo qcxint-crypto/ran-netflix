@@ -4,6 +4,8 @@ import { getEpisode, getAnimeDetail } from '@/lib/scraper'
 import VideoPlayer from '@/components/player/VideoPlayer'
 import WatchSidebar from '@/components/player/WatchSidebar'
 import EpisodeNavigation from '@/components/player/EpisodeNavigation'
+import AutoTrackProgress from '@/components/watchlist/AutoTrackProgress'
+import { episodeNumberFromSlug } from '@/lib/watchlist'
 import type { Metadata } from 'next'
 
 export const dynamic = 'force-dynamic'
@@ -29,6 +31,10 @@ export default async function WatchPage({
   params: Promise<{ slug: string }>
 }) {
   const { slug } = await params
+
+  // The slug encodes the episode number, so progress can be recorded from the
+  // URL alone without trusting the scraped payload.
+  const episodeNum = episodeNumberFromSlug(slug)
 
   let episode
   let animeDetail
@@ -72,6 +78,17 @@ export default async function WatchPage({
           />
           <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-background/80 to-background" />
         </div>
+      )}
+
+      {/* Records this episode as watched; renders nothing. */}
+      {episode.animeSlug && episodeNum !== null && (
+        <AutoTrackProgress
+          slug={episode.animeSlug}
+          episode={episodeNum}
+          title={episode.animeTitle || episode.title}
+          image={animeDetail?.image || ''}
+          totalEpisodes={animeDetail?.episodes.length || 0}
+        />
       )}
 
       <div className="relative px-4 md:px-8 py-6 max-w-[1600px] mx-auto">

@@ -5,6 +5,7 @@ import { getAnimeDetail, NotFoundError } from '@/lib/scraper'
 import EpisodeList from '@/components/anime/EpisodeList'
 import DetailBackdrop from '@/components/ui/DetailBackdrop'
 import InfoItem from '@/components/ui/InfoItem'
+import AddToListButton from '@/components/watchlist/AddToListButton'
 import type { Metadata } from 'next'
 
 export const dynamic = 'force-dynamic'
@@ -73,6 +74,15 @@ export default async function AnimeDetailPage({
             {detail.japanese && (
               <p className="text-text-secondary text-sm mb-4">{detail.japanese}</p>
             )}
+
+            <div className="mb-5">
+              <AddToListButton
+                slug={slug}
+                title={detail.title}
+                image={detail.image}
+                totalEpisodes={detail.episodes.length}
+              />
+            </div>
 
             <div className="flex flex-wrap gap-2 mb-5">
               {detail.genres.map((genre) => (

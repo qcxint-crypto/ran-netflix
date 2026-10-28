@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { SITE_NAME } from '@/lib/constants'
+import { useWatchlist } from '@/components/watchlist/WatchlistProvider'
 
 const NAV_LINKS = [
   { href: '/ongoing', label: 'On-Going' },
@@ -19,6 +20,7 @@ export default function Navbar() {
   const [scrolled, setScrolled] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
+  const { stats, ready } = useWatchlist()
 
   // Solidify the bar once the page moves, so it never floats over the hero
   // without separation.
@@ -71,6 +73,28 @@ export default function Navbar() {
                 </Link>
               )
             })}
+
+            <Link
+              href="/my-list"
+              aria-label="My List"
+              className={`relative flex items-center gap-2 px-3 py-2 rounded-full text-sm transition-colors ${
+                pathname === '/my-list'
+                  ? 'text-accent font-semibold'
+                  : 'text-text-secondary hover:text-text-primary font-medium'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17.593 3.322c.1.128.157.287.157.45v17.356a.75.75 0 01-1.174.62l-4.826-3.223-4.826 3.223a.75.75 0 01-1.174-.62V3.772c0-.163.057-.322.157-.45A2.25 2.25 0 017.5 2.25h9a2.25 2.25 0 011.093 1.072z" />
+              </svg>
+              My List
+              {/* Badge renders only after the first localStorage read, so the
+                  server markup and the first client render stay identical. */}
+              {ready && stats.total > 0 && (
+                <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-black text-[10px] font-bold flex items-center justify-center">
+                  {stats.total > 99 ? '99+' : stats.total}
+                </span>
+              )}
+            </Link>
           </div>
         </div>
 
