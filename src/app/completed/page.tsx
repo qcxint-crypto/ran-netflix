@@ -1,6 +1,7 @@
 import { getCompleted } from '@/lib/scraper'
 import AnimeGrid from '@/components/anime/AnimeGrid'
 import Pagination from '@/components/ui/Pagination'
+import PageHeader from '@/components/ui/PageHeader'
 import type { Metadata } from 'next'
 
 export const dynamic = 'force-dynamic'
@@ -20,15 +21,15 @@ export default async function CompletedPage({
     result = await getCompleted(page)
   } catch {
     return (
-      <div className="pt-16 px-4 md:px-8 py-8 max-w-[1400px] mx-auto">
+      <div className="pt-16 px-4 md:px-8 py-10 max-w-[1400px] mx-auto">
         <p className="text-text-secondary text-center py-20">Gagal memuat data</p>
       </div>
     )
   }
 
   return (
-    <div className="pt-16 px-4 md:px-8 py-8 max-w-[1400px] mx-auto">
-      <h1 className="text-2xl font-extrabold mb-6">Completed Anime</h1>
+    <div className="pt-16 px-4 md:px-8 py-10 max-w-[1400px] mx-auto">
+      <PageHeader title="Completed Anime" meta={`${result.data.length} titles`} />
       <AnimeGrid animes={result.data} />
       <Pagination currentPage={result.currentPage} hasNextPage={result.hasNextPage} basePath="/completed" />
     </div>

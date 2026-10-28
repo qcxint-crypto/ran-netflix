@@ -1,5 +1,3 @@
-'use client'
-
 import Link from 'next/link'
 
 export default function Pagination({
@@ -12,24 +10,36 @@ export default function Pagination({
   basePath: string
 }) {
   return (
-    <div className="flex items-center justify-center gap-4 mt-8">
-      {currentPage > 1 && (
+    <nav className="flex items-center justify-center gap-4 mt-10" aria-label="Pagination">
+      {currentPage > 1 ? (
         <Link
           href={`${basePath}?page=${currentPage - 1}`}
-          className="px-5 py-2 bg-surface hover:bg-surface-hover border border-border rounded-lg transition-colors"
+          rel="prev"
+          className="px-5 py-2.5 glass rounded-full text-sm hover:border-white/25 transition-colors"
         >
-          Prev
+          &larr; Prev
         </Link>
+      ) : (
+        <span className="px-5 py-2.5 rounded-full text-sm text-text-muted cursor-not-allowed">
+          &larr; Prev
+        </span>
       )}
-      <span className="text-text-secondary">Page {currentPage}</span>
-      {hasNextPage && (
+
+      <span className="text-sm text-text-secondary tabular-nums">Page {currentPage}</span>
+
+      {hasNextPage ? (
         <Link
           href={`${basePath}?page=${currentPage + 1}`}
-          className="px-5 py-2 bg-surface hover:bg-surface-hover border border-border rounded-lg transition-colors"
+          rel="next"
+          className="px-5 py-2.5 bg-accent hover:bg-accent-hover text-black rounded-full text-sm font-semibold transition-colors"
         >
-          Next
+          Next &rarr;
         </Link>
+      ) : (
+        <span className="px-5 py-2.5 rounded-full text-sm text-text-muted cursor-not-allowed">
+          Next &rarr;
+        </span>
       )}
-    </div>
+    </nav>
   )
 }

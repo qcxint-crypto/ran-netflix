@@ -1,26 +1,28 @@
 'use client'
 
-import Image from 'next/image'
 import Link from 'next/link'
+import Image from 'next/image'
 import type { MangaChapterData } from '@/types'
 
 export default function ChapterReader({ chapter }: { chapter: MangaChapterData }) {
   return (
     <div>
-      <div className="sticky top-16 z-40 bg-background/95 backdrop-blur-md border-b border-border">
-        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
+      {/* Reader bar: solid enough to stay legible over the pages scrolling under
+          it, but not a full-width slab that breaks the reading column. */}
+      <div className="sticky top-16 z-40 glass-strong border-b border-border/60">
+        <div className="max-w-3xl mx-auto px-4 py-2.5 flex items-center justify-between gap-3">
           <Link
             href={`/manga/${chapter.mangaSlug}`}
-            className="text-sm text-text-secondary hover:text-text-primary transition-colors"
+            className="shrink-0 text-sm text-text-secondary hover:text-accent transition-colors"
           >
-            ← Back
+            &larr; Back
           </Link>
-          <h2 className="text-sm font-semibold truncate mx-4">{chapter.title}</h2>
-          <div className="flex gap-2">
+          <h2 className="text-xs sm:text-sm font-semibold truncate text-center">{chapter.title}</h2>
+          <div className="flex gap-2 shrink-0">
             {chapter.prevSlug && (
               <Link
                 href={`/manga/${chapter.mangaSlug}/${chapter.prevSlug}`}
-                className="px-3 py-1.5 bg-surface border border-border rounded-lg text-xs hover:bg-surface-hover transition-colors"
+                className="px-3 py-1.5 glass rounded-lg text-xs text-text-secondary hover:text-text-primary hover:border-white/25 transition-colors"
               >
                 Prev
               </Link>
@@ -28,7 +30,7 @@ export default function ChapterReader({ chapter }: { chapter: MangaChapterData }
             {chapter.nextSlug && (
               <Link
                 href={`/manga/${chapter.mangaSlug}/${chapter.nextSlug}`}
-                className="px-3 py-1.5 bg-accent text-white rounded-lg text-xs hover:bg-accent-hover transition-colors"
+                className="px-3 py-1.5 bg-accent text-black rounded-lg text-xs font-semibold hover:bg-accent-hover transition-colors"
               >
                 Next
               </Link>
@@ -39,7 +41,7 @@ export default function ChapterReader({ chapter }: { chapter: MangaChapterData }
 
       <div className="max-w-3xl mx-auto">
         {chapter.images.map((src, i) => (
-          <div key={i} className="relative w-full">
+          <div key={i} className="relative w-full bg-surface/30">
             <Image
               src={src}
               alt={`Page ${i + 1}`}
@@ -47,27 +49,34 @@ export default function ChapterReader({ chapter }: { chapter: MangaChapterData }
               height={1200}
               className="w-full h-auto"
               unoptimized
+              // The first few pages are almost always seen; the rest can wait.
               loading={i < 3 ? 'eager' : 'lazy'}
             />
           </div>
         ))}
       </div>
 
-      <div className="max-w-3xl mx-auto px-4 py-6 flex items-center justify-center gap-4">
+      <div className="max-w-3xl mx-auto px-4 py-8 flex items-center justify-center gap-3">
         {chapter.prevSlug && (
           <Link
             href={`/manga/${chapter.mangaSlug}/${chapter.prevSlug}`}
-            className="px-5 py-2.5 bg-surface border border-border rounded-xl text-sm hover:bg-surface-hover transition-colors"
+            className="px-5 py-2.5 glass rounded-xl text-sm hover:border-white/25 transition-colors"
           >
-            ← Previous Chapter
+            &larr; Previous
           </Link>
         )}
+        <Link
+          href={`/manga/${chapter.mangaSlug}`}
+          className="px-5 py-2.5 glass rounded-xl text-sm text-text-secondary hover:text-accent hover:border-accent/40 transition-colors"
+        >
+          Chapter List
+        </Link>
         {chapter.nextSlug && (
           <Link
             href={`/manga/${chapter.mangaSlug}/${chapter.nextSlug}`}
-            className="px-5 py-2.5 bg-accent text-white rounded-xl text-sm font-semibold hover:bg-accent-hover transition-colors"
+            className="px-5 py-2.5 bg-accent text-black rounded-xl text-sm font-semibold hover:bg-accent-hover transition-colors"
           >
-            Next Chapter →
+            Next &rarr;
           </Link>
         )}
       </div>

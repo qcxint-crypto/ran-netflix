@@ -1,6 +1,8 @@
 import Image from 'next/image'
 import { getFilmDetail } from '@/lib/scraper'
 import VideoPlayer from '@/components/player/VideoPlayer'
+import DetailBackdrop from '@/components/ui/DetailBackdrop'
+import InfoItem from '@/components/ui/InfoItem'
 import type { Metadata } from 'next'
 
 export const dynamic = 'force-dynamic'
@@ -40,29 +42,18 @@ export default async function FilmDetailPage({
 
   return (
     <div className="pt-16">
-      <div className="relative w-full max-w-[1400px] mx-auto h-[40vh] md:h-[50vh] overflow-hidden">
-        {detail.image && (
-          <Image
-            src={detail.image}
-            alt={detail.title}
-            fill
-            className="object-cover object-center"
-            sizes="(max-width: 768px) 100vw, 1400px"
-            unoptimized
-          />
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
-      </div>
+      <DetailBackdrop image={detail.image} alt={detail.title} />
 
-      <div className="px-4 md:px-8 -mt-32 relative z-10 max-w-[1400px] mx-auto">
-        <div className="flex flex-col md:flex-row gap-6">
+      <div className="px-4 md:px-8 -mt-32 md:-mt-40 relative max-w-[1400px] mx-auto">
+        <div className="flex flex-col md:flex-row gap-6 md:gap-8">
           <div className="shrink-0 mx-auto md:mx-0">
             {detail.image && (
-              <div className="relative w-[180px] md:w-[240px] aspect-[3/4] rounded-2xl overflow-hidden shadow-2xl">
+              <div className="poster-card relative w-[170px] md:w-[240px] aspect-[3/4] rounded-2xl overflow-hidden border border-white/10 shadow-[0_24px_60px_-16px_rgba(0,0,0,0.95)]">
                 <Image
                   src={detail.image}
                   alt={detail.title}
                   fill
+                  priority
                   className="object-cover"
                   sizes="240px"
                   unoptimized
@@ -72,22 +63,21 @@ export default async function FilmDetailPage({
           </div>
 
           <div className="flex-1 min-w-0">
-            <h1 className="text-2xl md:text-3xl font-extrabold mb-2">{detail.title}</h1>
+            <h1 className="font-display text-2xl md:text-4xl font-extrabold mb-3 text-balance">
+              {detail.title}
+            </h1>
 
             {detail.genre && (
-              <div className="flex flex-wrap gap-2 mb-4">
+              <div className="flex flex-wrap gap-2 mb-5">
                 {detail.genre.split(',').map((g) => (
-                  <span
-                    key={g.trim()}
-                    className="px-3 py-1 bg-surface border border-border rounded-full text-xs text-text-secondary"
-                  >
+                  <span key={g.trim()} className="px-3 py-1 glass rounded-full text-xs text-text-secondary">
                     {g.trim()}
                   </span>
                 ))}
               </div>
             )}
 
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
               {detail.rating && <InfoItem label="Rating" value={detail.rating} />}
               {detail.year && <InfoItem label="Year" value={detail.year} />}
               {detail.quality && <InfoItem label="Quality" value={detail.quality} />}
@@ -96,27 +86,20 @@ export default async function FilmDetailPage({
 
             {detail.synopsis && (
               <div className="mb-6">
-                <h2 className="text-lg font-semibold mb-2">Synopsis</h2>
+                <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-text-muted mb-2">
+                  Synopsis
+                </h2>
                 <p className="text-sm text-text-secondary leading-relaxed">{detail.synopsis}</p>
               </div>
             )}
           </div>
         </div>
 
-        <div className="mt-8">
-          <h2 className="text-lg font-semibold mb-4">Watch</h2>
+        <div className="mt-10">
+          <h2 className="rule-accent text-lg md:text-2xl font-bold mb-4">Watch</h2>
           <VideoPlayer sources={detail.sources} />
         </div>
       </div>
-    </div>
-  )
-}
-
-function InfoItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="bg-surface rounded-xl p-3 border border-border">
-      <div className="text-xs text-text-secondary mb-1">{label}</div>
-      <div className="text-sm font-medium">{value}</div>
     </div>
   )
 }

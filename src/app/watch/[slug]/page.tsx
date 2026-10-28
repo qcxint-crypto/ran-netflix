@@ -1,6 +1,9 @@
+import Image from 'next/image'
+import Link from 'next/link'
 import { getEpisode, getAnimeDetail } from '@/lib/scraper'
 import VideoPlayer from '@/components/player/VideoPlayer'
 import WatchSidebar from '@/components/player/WatchSidebar'
+import EpisodeNavigation from '@/components/player/EpisodeNavigation'
 import type { Metadata } from 'next'
 
 export const dynamic = 'force-dynamic'
@@ -35,52 +38,76 @@ export default async function WatchPage({
       try {
         animeDetail = await getAnimeDetail(episode.animeSlug)
       } catch {
-        // Continue without anime details
+        // Sidebar is a nice-to-have; the player still works without it.
       }
     }
   } catch {
     return (
       <div className="pt-16 flex items-center justify-center min-h-screen">
-        <p className="text-text-secondary">Gagal memuat episode. Silakan coba lagi.</p>
+        <div className="text-center">
+          <p className="text-text-secondary mb-4">Gagal memuat episode. Silakan coba lagi.</p>
+          <Link
+            href="/"
+            className="inline-block px-5 py-2.5 bg-accent hover:bg-accent-hover text-black rounded-full text-sm font-semibold transition-colors"
+          >
+            Back to Home
+          </Link>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="pt-16 px-4 md:px-8 py-6 max-w-[1600px] mx-auto">
-      <div className="flex flex-col lg:flex-row gap-6">
-        <div className="flex-1 min-w-0">
-          <h1 className="text-lg md:text-xl font-bold mb-4">{episode.title}</h1>
-
-          <VideoPlayer sources={episode.sources} />
-
-          <div className="flex gap-3 mt-4">
-            {episode.prevSlug && (
-              <a
-                href={`/watch/${episode.prevSlug}`}
-                className="flex-1 text-center px-4 py-2.5 bg-surface hover:bg-surface-hover border border-border rounded-xl text-sm font-medium transition-colors"
-              >
-                ← Previous Episode
-              </a>
-            )}
-            {episode.nextSlug && (
-              <a
-                href={`/watch/${episode.nextSlug}`}
-                className="flex-1 text-center px-4 py-2.5 bg-accent hover:bg-accent-hover text-white rounded-xl text-sm font-semibold transition-colors"
-              >
-                Next Episode →
-              </a>
-            )}
-          </div>
-        </div>
-
-        {animeDetail && episode.animeSlug && (
-          <WatchSidebar
-            anime={animeDetail}
-            animeSlug={episode.animeSlug}
-            currentEpisodeSlug={slug}
+    <div className="pt-16">
+      {/* Poster backdrop tints the whole player area with the title's colours. */}
+      {animeDetail?.image && (
+        <div className="absolute inset-x-0 top-16 h-[60vh]" aria-hidden>
+          <Image
+            src={animeDetail.image}
+            alt=""
+            fill
+            sizes="100vw"
+            className="object-cover object-top opacity-[0.14] blur-2xl scale-110"
+            unoptimized
           />
-        )}
+          <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-background/80 to-background" />
+        </div>
+      )}
+
+      <div className="relative px-4 md:px-8 py-6 max-w-[1600px] mx-auto">
+        <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
+          <div className="flex-1 min-w-0">
+            <nav className="mb-3 text-xs text-text-muted" aria-label="Breadcrumb">
+              {episode.animeSlug && (
+                <>
+                  <Link href={`/anime/${episode.animeSlug}`} className="hover:text-accent transition-colors">
+                    {episode.animeTitle || 'Anime'}
+                  </Link>
+                  <span className="mx-2" aria-hidden>/</span>
+                </>
+              )}
+              <span className="text-text-secondary">{episode.title}</span>
+            </nav>
+
+            <h1 className="font-display text-lg md:text-2xl font-bold mb-4">{episode.title}</h1>
+
+            <VideoPlayer sources={episode.sources} poster={animeDetail?.image} />
+
+            <EpisodeNavigation
+              prevSlug={episode.prevSlug}
+              nextSlug={episode.nextSlug}
+              animeSlug={episode.animeSlug}
+            />
+          </div>
+
+          {animeDetail && episode.animeSlug && (
+            <WatchSidebar
+              anime={animeDetail}
+              animeSlug={episode.animeSlug}
+              currentEpisodeSlug={slug}
+            />
+          )}
+        </div>
       </div>
     </div>
   )

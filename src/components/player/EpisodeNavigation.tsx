@@ -10,35 +10,37 @@ export default function EpisodeNavigation({
   animeSlug?: string
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 mt-4">
+    <nav className="flex items-stretch gap-3 mt-4" aria-label="Episode navigation">
       {prevSlug ? (
         <Link
           href={`/watch/${prevSlug}`}
-          className="flex-1 text-center px-4 py-2.5 bg-surface hover:bg-surface-hover border border-border rounded-lg text-sm transition-colors"
+          className="flex-1 text-center px-4 py-3 glass rounded-xl text-sm hover:border-white/25 transition-colors"
         >
           &larr; Prev
         </Link>
       ) : (
-        <div className="flex-1" />
+        <span className="flex-1" />
       )}
+
       {animeSlug && (
         <Link
           href={`/anime/${animeSlug}`}
-          className="px-4 py-2.5 bg-surface hover:bg-surface-hover border border-border rounded-lg text-sm transition-colors"
+          className="px-4 py-3 glass rounded-xl text-sm text-text-secondary hover:text-accent hover:border-accent/40 transition-colors"
         >
           All Episodes
         </Link>
       )}
+
       {nextSlug ? (
         <Link
           href={`/watch/${nextSlug}`}
-          className="flex-1 text-center px-4 py-2.5 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm transition-colors"
+          className="flex-1 text-center px-4 py-3 bg-accent hover:bg-accent-hover text-black rounded-xl text-sm font-semibold transition-colors"
         >
           Next &rarr;
         </Link>
       ) : (
-        <div className="flex-1" />
+        <span className="flex-1" />
       )}
-    </div>
+    </nav>
   )
 }

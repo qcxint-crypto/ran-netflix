@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useCallback, useEffect, useState, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import AnimeGrid from '@/components/anime/AnimeGrid'
 import FilmGrid from '@/components/film/FilmGrid'
+import PageHeader from '@/components/ui/PageHeader'
 import { GridSkeleton } from '@/components/ui/Skeleton'
 import type { AnimeCard, FilmCard } from '@/types'
-import { useSearchParams } from 'next/navigation'
 
 function SearchContent() {
   const searchParams = useSearchParams()
@@ -16,19 +17,13 @@ function SearchContent() {
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
 
-  useEffect(() => {
-    if (initialQuery) {
-      setQuery(initialQuery)
-      doSearch(initialQuery)
-    }
-  }, [initialQuery])
-
-  async function doSearch(q: string) {
-    if (!q.trim()) return
+  const runSearch = useCallback(async (term: string) => {
+    const q = term.trim()
+    if (!q) return
     setLoading(true)
     setSearched(true)
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(q.trim())}`)
+      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`)
       const json = await res.json()
       setAnimeResults(json.data?.anime || [])
       setFilmResults(json.data?.films || [])
@@ -38,31 +33,50 @@ function SearchContent() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    doSearch(query)
-  }
+  useEffect(() => {
+    if (!initialQuery) return
+    setQuery(initialQuery)
+    runSearch(initialQuery)
+  }, [initialQuery, runSearch])
 
   const totalResults = animeResults.length + filmResults.length
 
   return (
-    <div className="pt-16 px-4 md:px-8 py-8 max-w-[1400px] mx-auto">
-      <h1 className="text-2xl font-extrabold mb-6">Search</h1>
+    <div className="pt-16 px-4 md:px-8 py-10 max-w-[1400px] mx-auto">
+      <PageHeader title="Search" subtitle="Cari anime, film, dan series" />
 
-      <form onSubmit={handleSubmit} className="mb-8">
-        <div className="flex gap-3 max-w-lg">
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search anime, film & series..."
-            className="flex-1 px-4 py-2.5 bg-surface border border-border rounded-full text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-text-secondary"
-          />
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          runSearch(query)
+        }}
+        className="mb-9"
+      >
+        <div className="flex gap-3 max-w-xl">
+          <div className="relative flex-1">
+            <svg
+              className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Naruto, Jujutsu Kaisen, ..."
+              aria-label="Search query"
+              className="w-full pl-11 pr-4 py-3 glass rounded-full text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/60 transition-colors"
+            />
+          </div>
           <button
             type="submit"
-            className="px-6 py-2.5 bg-accent hover:bg-accent-hover text-white rounded-full transition-colors font-semibold"
+            className="px-6 py-3 bg-accent hover:bg-accent-hover text-black rounded-full transition-colors font-bold text-sm"
           >
             Search
           </button>
@@ -73,33 +87,31 @@ function SearchContent() {
         <GridSkeleton />
       ) : searched ? (
         <>
-          <p className="text-sm text-text-secondary mb-4">
-            {totalResults} results found for &quot;{initialQuery || query}&quot;
+          <p className="text-sm text-text-secondary mb-6">
+            {totalResults} results for &quot;{initialQuery || query}&quot;
           </p>
 
           {animeResults.length > 0 && (
-            <div className="mb-8">
-              <h2 className="text-lg font-bold mb-4">Anime</h2>
+            <section className="mb-10">
+              <h2 className="rule-accent text-lg md:text-xl font-bold mb-5">Anime</h2>
               <AnimeGrid animes={animeResults} />
-            </div>
+            </section>
           )}
 
           {filmResults.length > 0 && (
-            <div className="mb-8">
-              <h2 className="text-lg font-bold mb-4">Film & Series</h2>
+            <section className="mb-10">
+              <h2 className="rule-accent text-lg md:text-xl font-bold mb-5">Film &amp; Series</h2>
               <FilmGrid films={filmResults} />
-            </div>
+            </section>
           )}
 
           {totalResults === 0 && (
-            <p className="text-text-secondary text-center py-10">
-              Tidak ada hasil ditemukan
-            </p>
+            <p className="text-text-secondary text-center py-14">Tidak ada hasil ditemukan</p>
           )}
         </>
       ) : (
         <p className="text-text-secondary text-center py-20">
-          Type a title to start searching
+          Ketik judul untuk mulai mencari
         </p>
       )}
     </div>

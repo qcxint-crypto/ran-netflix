@@ -1,8 +1,10 @@
-import Image from 'next/image'
 import Link from 'next/link'
+import Image from 'next/image'
+import { notFound } from 'next/navigation'
 import { getAnimeDetail, NotFoundError } from '@/lib/scraper'
 import EpisodeList from '@/components/anime/EpisodeList'
-import { notFound } from 'next/navigation'
+import DetailBackdrop from '@/components/ui/DetailBackdrop'
+import InfoItem from '@/components/ui/InfoItem'
 import type { Metadata } from 'next'
 
 export const dynamic = 'force-dynamic'
@@ -44,29 +46,18 @@ export default async function AnimeDetailPage({
 
   return (
     <div className="pt-16">
-      <div className="relative w-full max-w-[1400px] mx-auto h-[40vh] md:h-[50vh] overflow-hidden">
-        {detail.image && (
-          <Image
-            src={detail.image}
-            alt={detail.title}
-            fill
-            className="object-cover object-center"
-            sizes="(max-width: 768px) 100vw, 1400px"
-            unoptimized
-          />
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
-      </div>
+      <DetailBackdrop image={detail.image} alt={detail.title} />
 
-      <div className="px-4 md:px-8 -mt-32 relative z-10 max-w-[1400px] mx-auto">
-        <div className="flex flex-col md:flex-row gap-6">
+      <div className="px-4 md:px-8 -mt-32 md:-mt-40 relative max-w-[1400px] mx-auto">
+        <div className="flex flex-col md:flex-row gap-6 md:gap-8">
           <div className="shrink-0 mx-auto md:mx-0">
             {detail.image && (
-              <div className="relative w-[180px] md:w-[240px] aspect-[3/4] rounded-2xl overflow-hidden shadow-2xl">
+              <div className="poster-card relative w-[170px] md:w-[240px] aspect-[3/4] rounded-2xl overflow-hidden border border-white/10 shadow-[0_24px_60px_-16px_rgba(0,0,0,0.95)]">
                 <Image
                   src={detail.image}
                   alt={detail.title}
                   fill
+                  priority
                   className="object-cover"
                   sizes="240px"
                   unoptimized
@@ -76,17 +67,19 @@ export default async function AnimeDetailPage({
           </div>
 
           <div className="flex-1 min-w-0">
-            <h1 className="text-2xl md:text-3xl font-extrabold mb-2">{detail.title}</h1>
+            <h1 className="font-display text-2xl md:text-4xl font-extrabold mb-2 text-balance">
+              {detail.title}
+            </h1>
             {detail.japanese && (
               <p className="text-text-secondary text-sm mb-4">{detail.japanese}</p>
             )}
 
-            <div className="flex flex-wrap gap-2 mb-4">
+            <div className="flex flex-wrap gap-2 mb-5">
               {detail.genres.map((genre) => (
                 <Link
                   key={genre}
-                  href={`/genre/${genre.toLowerCase()}`}
-                  className="px-3 py-1 bg-surface border border-border rounded-full text-xs text-text-secondary hover:text-accent hover:border-accent transition-colors"
+                  href={`/genre/${genre.toLowerCase().replace(/\s+/g, '-')}`}
+                  className="px-3 py-1 glass rounded-full text-xs text-text-secondary hover:text-accent hover:border-accent/40 transition-colors"
                 >
                   {genre}
                 </Link>
@@ -94,48 +87,31 @@ export default async function AnimeDetailPage({
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
-              {detail.rating && (
-                <InfoItem label="Rating" value={detail.rating} />
-              )}
-              {detail.type && (
-                <InfoItem label="Type" value={detail.type} />
-              )}
-              {detail.status && (
-                <InfoItem label="Status" value={detail.status} />
-              )}
-              {detail.studio && (
-                <InfoItem label="Studio" value={detail.studio} />
-              )}
-              {detail.duration && (
-                <InfoItem label="Duration" value={detail.duration} />
-              )}
-              {detail.season && (
-                <InfoItem label="Season" value={detail.season} />
-              )}
+              {detail.rating && <InfoItem label="Rating" value={detail.rating} />}
+              {detail.type && <InfoItem label="Type" value={detail.type} />}
+              {detail.status && <InfoItem label="Status" value={detail.status} />}
+              {detail.studio && <InfoItem label="Studio" value={detail.studio} />}
+              {detail.duration && <InfoItem label="Duration" value={detail.duration} />}
+              {detail.season && <InfoItem label="Season" value={detail.season} />}
             </div>
 
             {detail.synopsis && (
               <div className="mb-6">
-                <h2 className="text-lg font-semibold mb-2">Synopsis</h2>
-                <p className="text-sm text-text-secondary leading-relaxed line-clamp-3">{detail.synopsis}</p>
+                <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-text-muted mb-2">
+                  Synopsis
+                </h2>
+                <p className="text-sm text-text-secondary leading-relaxed line-clamp-3">
+                  {detail.synopsis}
+                </p>
               </div>
             )}
           </div>
         </div>
 
-        <div className="mt-8">
+        <div className="mt-10">
           <EpisodeList episodes={detail.episodes} />
         </div>
       </div>
-    </div>
-  )
-}
-
-function InfoItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="bg-surface rounded-xl p-3 border border-border">
-      <div className="text-xs text-text-secondary mb-1">{label}</div>
-      <div className="text-sm font-medium">{value}</div>
     </div>
   )
 }

@@ -13,8 +13,19 @@ export async function GET(request: Request) {
 
   try {
     const parsed = new URL(url)
-    const allowed = ['img.komiku.org', 'thumbnail.komiku.org', 'cdn.komiku.org']
-    if (!allowed.some(h => parsed.hostname.endsWith(h))) {
+    // Strict hostname allowlist — this route must never become an open proxy.
+    // AniList and TMDB are included so the WebGL poster wall can read their
+    // images as textures: both serve them fine in an <img>, but block
+    // cross-origin canvas reads, which taints (and drops) a WebGL texture.
+    const allowed = [
+      'img.komiku.org',
+      'thumbnail.komiku.org',
+      'cdn.komiku.org',
+      's4.anilist.co',
+      'image.tmdb.org',
+    ]
+    const permitted = allowed.some(h => parsed.hostname === h || parsed.hostname.endsWith('.' + h))
+    if (!permitted || parsed.protocol !== 'https:') {
       return new NextResponse('Domain not allowed', { status: 403 })
     }
 
@@ -22,7 +33,7 @@ export async function GET(request: Request) {
     const timer = setTimeout(() => controller.abort(), 10000)
     const res = await fetch(url, {
       headers: {
-        'Referer': 'https://komiku.org/',
+        'Referer': `${parsed.origin}/`,
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       },
       signal: controller.signal,

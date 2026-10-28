@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { getGenres } from '@/lib/scraper'
+import PageHeader from '@/components/ui/PageHeader'
 import type { Metadata } from 'next'
 
 export const dynamic = 'force-dynamic'
@@ -12,21 +13,22 @@ export default async function GenrePage() {
     genres = await getGenres()
   } catch {
     return (
-      <div className="pt-16 px-4 md:px-8 py-8 max-w-[1400px] mx-auto">
+      <div className="pt-16 px-4 md:px-8 py-10 max-w-[1400px] mx-auto">
         <p className="text-text-secondary text-center py-20">Gagal memuat genre</p>
       </div>
     )
   }
 
   return (
-    <div className="pt-16 px-4 md:px-8 py-8 max-w-[1400px] mx-auto">
-      <h1 className="text-2xl font-extrabold mb-6">Genres</h1>
+    <div className="pt-16 px-4 md:px-8 py-10 max-w-[1400px] mx-auto">
+      <PageHeader title="Genres" subtitle="Browse anime by genre" />
       <div className="flex flex-wrap gap-3">
-        {genres.map((genre) => (
+        {genres.map((genre, i) => (
           <Link
             key={genre.slug}
             href={`/genre/${genre.slug}`}
-            className="px-4 py-2 bg-surface border border-border rounded-full text-sm hover:border-accent hover:text-accent transition-colors"
+            style={{ animationDelay: `${Math.min(i, 20) * 25}ms` }}
+            className="animate-fade-up px-4 py-2 glass rounded-full text-sm text-text-secondary hover:text-accent hover:border-accent/50 transition-all duration-300 hover:-translate-y-0.5"
           >
             {genre.name}
           </Link>
