@@ -17,3 +17,6 @@ next-env.d.ts
 _re/
 _re/**
 *.apk
+
+# Transpiled-on-the-fly copy the parser test writes beside its source.
+.gogo-parser.test-*.mjs

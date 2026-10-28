@@ -146,7 +146,9 @@ async function resolveMirror(
     if (!src) return null
 
     return {
-      label: `${quality} - ${serverName}`,
+      // Provider name rides in the label so the merged selector shows where a
+      // server comes from (quality is already its own grouping dimension).
+      label: `${serverName} - Otakudesu`,
       quality,
       server: serverIdx + 1,
       src,

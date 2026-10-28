@@ -1,5 +1,5 @@
 import { cacheGet, cacheGetStale, cacheSet } from './cache'
-import { NotFoundError } from './config'
+import { NotFoundError, USER_AGENT } from './config'
 export { NotFoundError }
 import type {
   HomeData, AnimeCard, AnimeDetail, EpisodeData, Genre, PaginatedResult,
@@ -45,6 +45,13 @@ import {
 } from './otakudesu-client'
 import { getAnimasuEpisodeSources } from './animasu-client'
 import { withTimeout } from './fetcher'
+import { getGogoEpisode, matchGogoSeries, searchGogo } from './gogo-client'
+import {
+  malAnimeById,
+  malConfigured,
+  malTopAnime,
+  type MalAnime,
+} from './mal-client'
 import {
   getLK21Latest,
   getLK21Genre,
@@ -115,7 +122,23 @@ function toAnimeDetail(anime: JikanAnime): AnimeDetail {
     duration: anime.duration,
     season: anime.season && anime.year ? `${anime.season} ${anime.year}` : undefined,
     genres: anime.genres.map((g) => g.name),
+    // AniList carries the MAL id, so the page can link out without a second
+    // lookup. 0 means the node has no MAL mapping.
+    malId: anime.mal_id > 0 ? anime.mal_id : undefined,
     episodes: episodes,
+  }
+}
+
+function malToAnimeCard(anime: MalAnime): AnimeCard {
+  return {
+    title: anime.title,
+    // MAL ids are the same namespace AniList's idMal uses, so these cards route
+    // through the existing detail page like any other anime.
+    slug: `anime-${anime.id}`,
+    image: anime.image || '',
+    episode: anime.episodes ? `${anime.episodes} Episodes` : undefined,
+    type: anime.type,
+    rating: anime.score ? `⭐ ${anime.score}` : undefined,
   }
 }
 
@@ -129,12 +152,13 @@ export async function getHome(): Promise<HomeData> {
   // The five sources are independent, so fan them out and bound each one. Run
   // sequentially a cold start summed every source's latency (30s+); bounded and
   // parallel the whole call finishes in roughly the slowest single source.
-  const [ongoing, completed, movies, manga, films] = await Promise.all([
+  const [ongoing, completed, movies, manga, films, malTop] = await Promise.all([
     withTimeout(getCurrentSeasonAnime(1, 12), 8000, null),
     withTimeout(getCompletedAnime(1, 12), 8000, null),
     withTimeout(getTopMovies(1, 12), 8000, null),
     withTimeout(fetchPopularManga(1), 8000, [] as MangaCard[]),
     withTimeout(getLK21Latest(1), 8000, [] as LK21Movie[]),
+    withTimeout(getMalTop(12), 8000, [] as AnimeCard[]),
   ])
 
   const data: HomeData = {
@@ -143,6 +167,7 @@ export async function getHome(): Promise<HomeData> {
     movies: (movies?.data ?? []).map(toAnimeCard),
     manga: (manga ?? []).slice(0, 12),
     films: (films ?? []).slice(0, 12).map(toFilmCard),
+    malTop,
   }
 
   // Only serve partial data if it carries something; otherwise prefer stale.
@@ -244,6 +269,12 @@ export async function getAnimeDetail(slug: string): Promise<AnimeDetail> {
   try {
     const res = await getAnimeById(malId)
     const data = toAnimeDetail(res.data)
+    // MAL score is decoration on top of the AniList payload. Bounded and
+    // best-effort: a slow or unconfigured MAL must not delay the page.
+    if (data.malId && malConfigured()) {
+      const mal = await withTimeout(malAnimeById(data.malId), 4000, null)
+      if (mal?.score) data.malScore = mal.score
+    }
     cacheSet(key, data, TTL.DETAIL)
     return data
   } catch (err) {
@@ -256,6 +287,108 @@ export async function getAnimeDetail(slug: string): Promise<AnimeDetail> {
     if (stale) return stale
     throw new Error('Failed to load anime detail')
   }
+}
+
+// Providers hand out a "maintenance" page in place of a player instead of
+// failing, so the URL looks playable and the iframe renders a blank box. There
+// is no reliable status code to key off — a dead mirror answers 200 — so match
+// the path.
+const DEAD_PATH = /\/maintenance(\/|$|\?)/i
+
+function isDeadSource(src: string): boolean {
+  return DEAD_PATH.test(src)
+}
+
+/** One cheap GET, bounded. Only used when every other provider has missed. */
+async function isReachable(url: string, ms: number): Promise<boolean> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), ms)
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENT },
+      redirect: 'follow',
+      signal: controller.signal,
+      cache: 'no-store',
+    })
+    return res.status < 500
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * Resolve the gogoanime embed for one episode. Returns null on any miss so the
+ * caller degrades to "no source" rather than a broken player.
+ */
+async function resolveGogoSource(
+  titles: string[],
+  episode: number
+): Promise<StreamingSource | null> {
+  try {
+    const slug = await matchGogoSeries(titles)
+    if (!slug) return null
+    const found = await getGogoEpisode(slug, episode)
+    if (!found?.embedUrl) return null
+    return {
+      label: 'Gogoanime',
+      quality: 'default',
+      server: 1,
+      src: found.embedUrl,
+    }
+  } catch {
+    return null
+  }
+}
+
+/** Top MyAnimeList row. Empty when the client ID is unset or MAL is down. */
+export async function getMalTop(limit = 12): Promise<AnimeCard[]> {
+  if (!malConfigured()) return []
+  const key = `mal:top:cards:${limit}`
+  const cached = cacheGet<AnimeCard[]>(key)
+  if (cached) return cached
+
+  const top = await withTimeout(malTopAnime(limit), 8000, [] as MalAnime[])
+  const cards = top.map(malToAnimeCard)
+  if (cards.length > 0) cacheSet(key, cards, TTL.DETAIL)
+  return cards
+}
+
+/** Gogoanime search, shaped as anime cards for the search page. */
+export async function searchGogoCards(query: string): Promise<AnimeCard[]> {
+  const q = query.trim()
+  if (!q) return []
+
+  // One AniList lookup buys posters for the whole result set, matched by title
+  // overlap — cheaper than a per-result metadata call.
+  const [results, metadata] = await Promise.all([
+    searchGogo(q).catch(() => []),
+    searchJikan(q).then((r) => r.data).catch(() => []),
+  ])
+  if (results.length === 0) return []
+
+  return results.map((r) => {
+    const tokens = new Set(r.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ').filter(Boolean))
+    let poster: string | undefined
+    let best = 0
+    for (const m of metadata) {
+      const mt = m.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ').filter(Boolean)
+      if (mt.length === 0) continue
+      let shared = 0
+      mt.forEach((t) => { if (tokens.has(t)) shared++ })
+      const score = shared / mt.length
+      if (score > best) { best = score; poster = m.images.jpg.large_image_url || undefined }
+    }
+    return {
+      slug: r.slug,
+      title: r.title,
+      image: (best >= 0.6 ? poster : undefined) || r.image || '',
+      episode: r.status,
+      // Gogo series have no MAL id, so the card links straight at the provider.
+      externalUrl: r.url,
+    } satisfies AnimeCard
+  })
 }
 
 export async function getEpisode(slug: string): Promise<EpisodeData> {
@@ -334,15 +467,29 @@ export async function getEpisode(slug: string): Promise<EpisodeData> {
       sources = await withTimeout(scrapeSources(), 8000, [] as StreamingSource[])
     }
 
+    // Upstreams hand out "maintenance" placeholders as if they were players, so
+    // they render as a black box with no error. Drop them before anything else
+    // looks at the list.
+    sources = sources.filter((s) => !isDeadSource(s.src))
+
+    // Gogoanime is the second provider and rides along as an extra selectable
+    // server rather than only appearing when the first chain fails — it covers
+    // titles otakudesu has never carried, and when the chain misses entirely it
+    // is the fallback the brief calls for.
+    const gogo = await withTimeout(resolveGogoSource(candidateTitles, episodeNum), 12000, null)
+    if (gogo) sources = [...sources, gogo]
+
     if (sources.length === 0) {
-      // Neither scraper carries this title (or ran out of budget); fall back to
-      // MAL-mapped embeds reachable from Indonesian ISPs (vidsrc.cc is DNS-blocked
-      // there). vidnest first: vidlink.pro root returns 403 from datacenter IPs, so
-      // it often renders blank when chosen as the default first server.
-      sources.push(
-        { label: 'Server 1', quality: 'HD', server: 1, src: `https://vidnest.fun/anime/${malId}/${episodeNum}/sub`, noSandbox: true },
-        { label: 'Server 2', quality: 'HD', server: 2, src: `https://vidlink.pro/anime/${malId}/${episodeNum}/sub?fallback=true`, noSandbox: true },
-      )
+      // Last resort: MAL-id-addressed embeds reachable from Indonesian ISPs
+      // (vidsrc.cc is DNS-blocked there). Probe them first — an unreachable host
+      // is exactly the "playable-looking dead URL" failure this task exists to
+      // stop, and adding one blind would put the broken player straight back.
+      const lastResort: StreamingSource[] = [
+        { label: 'VidNest', quality: 'HD', server: 1, src: `https://vidnest.fun/anime/${malId}/${episodeNum}/sub`, noSandbox: true },
+        { label: 'VidLink', quality: 'HD', server: 2, src: `https://vidlink.pro/anime/${malId}/${episodeNum}/sub?fallback=true`, noSandbox: true },
+      ]
+      const alive = await Promise.all(lastResort.map((s) => isReachable(s.src, 5000)))
+      sources = lastResort.filter((_, i) => alive[i])
     }
 
     const data: EpisodeData = {
@@ -352,6 +499,9 @@ export async function getEpisode(slug: string): Promise<EpisodeData> {
       prevSlug: episodeNum > 1 ? `anime-${malId}-episode-${episodeNum - 1}` : undefined,
       nextSlug: episodeNum < (anime.episodes || 999) ? `anime-${malId}-episode-${episodeNum + 1}` : undefined,
       sources,
+      // Every provider missed. Say so explicitly; an empty player with no
+      // explanation reads as a bug.
+      note: sources.length === 0 ? 'No working source' : undefined,
     }
 
     cacheSet(key, data, TTL.EPISODE)

@@ -6,6 +6,9 @@ export interface AnimeCard {
   type?: string
   rating?: string
   status?: string
+  // Set when the item has no internal detail page and should link straight at
+  // the provider instead (gogoanime search results).
+  externalUrl?: string
 }
 
 export interface AnimeDetail {
@@ -22,6 +25,12 @@ export interface AnimeDetail {
   genres: string[]
   episodes: EpisodeItem[]
   batchLinks?: BatchLink[]
+  // MyAnimeList id, when the upstream metadata provider exposes one. Drives the
+  // external MAL link and the score badge.
+  malId?: number
+  // MAL community score. AniList and MAL disagree often enough that the page
+  // shows both rather than pretending one is authoritative.
+  malScore?: number
 }
 
 export interface EpisodeItem {
@@ -55,6 +64,9 @@ export interface EpisodeData {
   prevSlug?: string
   nextSlug?: string
   sources: StreamingSource[]
+  // Set when no playable source could be resolved, so the UI can show a clear
+  // empty state instead of a broken player.
+  note?: string
 }
 
 export interface Genre {
@@ -80,6 +92,7 @@ export interface HomeData {
   movies?: AnimeCard[]
   manga?: MangaCard[]
   films?: FilmCard[]
+  malTop?: AnimeCard[]
 }
 
 // --- Film types (LK21) ---
