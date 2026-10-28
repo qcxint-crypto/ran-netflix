@@ -293,30 +293,76 @@ export async function getAnimeDetail(slug: string): Promise<AnimeDetail> {
 // failing, so the URL looks playable and the iframe renders a blank box. There
 // is no reliable status code to key off — a dead mirror answers 200 — so match
 // the path.
-const DEAD_PATH = /\/maintenance(\/|$|\?)/i
+export const DEAD_PATH = /\/maintenance(\/|$|\?)/i
 
 function isDeadSource(src: string): boolean {
+  if (!src) return true
   return DEAD_PATH.test(src)
 }
 
-/** One cheap GET, bounded. Only used when every other provider has missed. */
-async function isReachable(url: string, ms: number): Promise<boolean> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), ms)
-  try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT },
-      redirect: 'follow',
-      signal: controller.signal,
-      cache: 'no-store',
-    })
-    return res.status < 500
-  } catch {
-    return false
-  } finally {
-    clearTimeout(timer)
+function dedupSources(list: StreamingSource[]): StreamingSource[] {
+  const seen = new Set<string>()
+  const out: StreamingSource[] = []
+  for (const s of list) {
+    const key = (s.src || '').trim()
+    if (!key || seen.has(key)) continue
+    if (isDeadSource(key)) continue
+    seen.add(key)
+    out.push(s)
   }
+  return out
 }
+
+/**
+ * Cheap reachability probe for last-resort embeds (vidnest / vidlink).
+ * Uses HEAD first, falls back to GET on 405/501 or body-less hosts.
+ * Also catches a soft 200 that redirects to /maintenance.
+ */
+async function isReachable(url: string, ms: number): Promise<boolean> {
+  if (isDeadSource(url)) return false
+  const tryFetch = async (method: 'HEAD' | 'GET'): Promise<boolean> => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), ms)
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'User-Agent': USER_AGENT },
+        redirect: 'follow',
+        signal: controller.signal,
+        cache: 'no-store',
+      })
+      const finalUrl = (res as unknown as { url?: string }).url || ''
+      if (isDeadSource(finalUrl)) return false
+      // Some CDNs answer HEAD with 405/403 but GET works.
+      if (res.status === 405 || res.status === 501) return false
+      return res.status < 500
+    } catch {
+      return false
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  const headOk = await tryFetch('HEAD')
+  if (headOk) return true
+  // HEAD not supported — one cheap GET as fallback.
+  return tryFetch('GET')
+}
+
+/** Probe a tier in parallel, bounded, with a per-probe ceiling. */
+async function filterAliveSources(
+  srcs: StreamingSource[],
+  perProbeMs: number
+): Promise<StreamingSource[]> {
+  if (srcs.length === 0) return []
+  const checks = await Promise.all(srcs.map((s) => isReachable(s.src, perProbeMs)))
+  return srcs.filter((_, i) => checks[i])
+}
+
+// Total wall budget for getEpisode including AniList metadata + otakudesu index
+// + mirror resolution + gogo + last-resort probes. Vercel maxDuration = 60s on
+// the route, so leave headroom for the sidebar fetch that follows.
+const TOTAL_EPISODE_BUDGET_MS = 45_000
 
 /**
  * Resolve the gogoanime embed for one episode. Returns null on any miss so the

@@ -2,7 +2,7 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
 export type PosterKind = 'anime' | 'film' | 'manga'
 
@@ -39,34 +39,70 @@ export default function PosterCard({
   const cardRef = useRef<HTMLAnchorElement>(null)
   const styles = KIND_STYLES[kind]
 
-  /**
-   * Writes the 3D rotation and the sheen origin straight to the element's
-   * style. Going through React state here would re-render a whole row on every
-   * pointer move.
-   */
-  const handleMove = useCallback((event: React.PointerEvent<HTMLAnchorElement>) => {
+  // rAF coalescing — store pending coords, schedule only one rAF at a time.
+  const pendingCoords = useRef<{ x: number; y: number; has: boolean }>({
+    x: 0,
+    y: 0,
+    has: false,
+  })
+  const rafId = useRef<number>(0)
+
+  const applyTransform = useCallback(() => {
+    rafId.current = 0
     const el = cardRef.current
-    if (!el) return
-    // Touch does not hover; skip the tilt entirely on coarse pointers.
-    if (event.pointerType !== 'mouse') return
-
-    const rect = el.getBoundingClientRect()
-    const px = (event.clientX - rect.left) / rect.width
-    const py = (event.clientY - rect.top) / rect.height
-
-    el.style.setProperty('--mx', `${px * 100}%`)
-    el.style.setProperty('--my', `${py * 100}%`)
+    if (!el || !pendingCoords.current.has) return
+    const { x, y } = pendingCoords.current
+    el.style.setProperty('--mx', `${x * 100}%`)
+    el.style.setProperty('--my', `${y * 100}%`)
     el.style.transform =
-      `perspective(900px) rotateY(${(px - 0.5) * 11}deg) rotateX(${(0.5 - py) * 11}deg) ` +
+      `perspective(900px) rotateY(${(x - 0.5) * 11}deg) rotateX(${(0.5 - y) * 11}deg) ` +
       'translateY(-6px) scale(1.03)'
   }, [])
 
+  /**
+   * Writes the 3D rotation and the sheen origin straight to the element's
+   * style. Going through React state here would re-render a whole row on every
+   * pointer move. Events are coalesced via rAF so at most one DOM write per frame.
+   */
+  const handleMove = useCallback(
+    (event: React.PointerEvent<HTMLAnchorElement>) => {
+      const el = cardRef.current
+      if (!el) return
+      // Touch does not hover; skip the tilt entirely on coarse pointers.
+      if (event.pointerType !== 'mouse') return
+
+      const rect = el.getBoundingClientRect()
+      pendingCoords.current.x = (event.clientX - rect.left) / rect.width
+      pendingCoords.current.y = (event.clientY - rect.top) / rect.height
+      pendingCoords.current.has = true
+
+      if (rafId.current === 0) {
+        rafId.current = window.requestAnimationFrame(applyTransform)
+      }
+    },
+    [applyTransform],
+  )
+
   const handleLeave = useCallback(() => {
+    if (rafId.current !== 0) {
+      window.cancelAnimationFrame(rafId.current)
+      rafId.current = 0
+    }
+    pendingCoords.current.has = false
     const el = cardRef.current
     if (!el) return
     el.style.transform = ''
     el.style.removeProperty('--mx')
     el.style.removeProperty('--my')
+  }, [])
+
+  // Cleanup rAF on unmount.
+  useEffect(() => {
+    return () => {
+      if (rafId.current !== 0) {
+        window.cancelAnimationFrame(rafId.current)
+      }
+    }
   }, [])
 
   return (

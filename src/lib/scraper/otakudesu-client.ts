@@ -1,9 +1,15 @@
 import * as cheerio from 'cheerio'
 import { fetchHTML, postAjax } from './fetcher'
-import { BASE_URL } from './config'
+import { BASE_URL, USER_AGENT } from './config'
 import { extractSlug } from '@/lib/utils'
 import { cacheGet, cacheGetStale, cacheSet } from './cache'
 import type { StreamingSource } from '@/types'
+
+const DEAD_PATH_RE = /\/maintenance(\/|$|\?)/i
+
+function isDeadUrl(url: string): boolean {
+  return !url || DEAD_PATH_RE.test(url)
+}
 
 // --- Anime-list index + fuzzy matcher ---------------------------------------
 // otakudesu's ?s= search does loose synopsis matching and frequently misses a
@@ -203,12 +209,18 @@ export async function getStreamingSources(episodeUrl: string): Promise<Streaming
     const html = await fetchHTML(episodeUrl)
     const $ = cheerio.load(html)
 
+    const srcSet = new Set<string>()
     const sources: StreamingSource[] = []
 
-    const defaultIframeSrc = $('.responsive-embed-stream iframe').attr('src') || ''
-    if (defaultIframeSrc) {
-      sources.push({ label: 'Default', quality: 'default', server: 1, src: defaultIframeSrc })
+    const addSource = (label: string, quality: string, server: number, src: string) => {
+      const trimmed = (src || '').trim()
+      if (!trimmed || isDeadUrl(trimmed) || srcSet.has(trimmed)) return
+      srcSet.add(trimmed)
+      sources.push({ label, quality, server, src: trimmed })
     }
+
+    const defaultIframeSrc = $('.responsive-embed-stream iframe').attr('src') || ''
+    addSource('Default', 'default', 1, defaultIframeSrc)
 
     const actionSet = new Set<string>()
     const actionRegex = /action:\s*["']([a-f0-9]{32})["']/g
@@ -241,14 +253,29 @@ export async function getStreamingSources(episodeUrl: string): Promise<Streaming
         const resolved = await Promise.all(
           mirrors.map((m, i) => resolveMirror(embedAction, nonce, m.dataContent, m.quality, m.server, i))
         )
-        resolved.forEach(s => { if (s) sources.push(s) })
+        resolved.forEach((s) => {
+          if (!s || isDeadUrl(s.src)) return
+          if (srcSet.has(s.src)) return
+          srcSet.add(s.src)
+          sources.push(s)
+        })
       }
     }
 
-    return sources
+    return dedupBySrc(sources)
   } catch {
     return []
   }
+}
+
+function dedupBySrc(list: StreamingSource[]): StreamingSource[] {
+  const seen = new Set<string>()
+  return list.filter((s) => {
+    const k = (s.src || '').trim()
+    if (!k || isDeadUrl(k) || seen.has(k)) return false
+    seen.add(k)
+    return true
+  })
 }
 
 export async function findEpisodeUrl(animeTitle: string, episodeNum: number): Promise<string | null> {
