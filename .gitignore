@@ -11,3 +11,9 @@ out/
 deploy.sh
 *.tsbuildinfo
 next-env.d.ts
+
+# Reverse-engineering workspace: APK samples, extracted resources, notes.
+# Never a blanket .env* rule — .env.example must stay trackable.
+_re/
+_re/**
+*.apk
