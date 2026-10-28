@@ -13,7 +13,8 @@ export default function AnimeCard({
 
   return (
     <PosterCard
-      href={`/anime/${anime.slug}`}
+      href={anime.externalUrl || `/anime/${anime.slug}`}
+      external={Boolean(anime.externalUrl)}
       image={anime.image}
       title={anime.title}
       kind="anime"

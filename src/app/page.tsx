@@ -48,6 +48,9 @@ export default async function HomePage() {
         {data.movies && data.movies.length > 0 && (
           <AnimeRow title="Anime Movies" animes={data.movies} href="/movies" />
         )}
+        {data.malTop && data.malTop.length > 0 && (
+          <AnimeRow title="Top MyAnimeList" animes={data.malTop} />
+        )}
         {data.films && data.films.length > 0 && (
           <FilmRow title="Film & Series Terbaru" films={data.films} href="/film" />
         )}

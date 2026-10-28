@@ -108,7 +108,7 @@ export default async function WatchPage({
 
             <h1 className="font-display text-lg md:text-2xl font-bold mb-4">{episode.title}</h1>
 
-            <VideoPlayer sources={episode.sources} poster={animeDetail?.image} />
+            <VideoPlayer sources={episode.sources} poster={animeDetail?.image} note={episode.note} />
 
             <EpisodeNavigation
               prevSlug={episode.prevSlug}

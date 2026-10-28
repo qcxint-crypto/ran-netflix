@@ -75,13 +75,28 @@ export default async function AnimeDetailPage({
               <p className="text-text-secondary text-sm mb-4">{detail.japanese}</p>
             )}
 
-            <div className="mb-5">
+            <div className="mb-5 flex flex-wrap items-center gap-3">
               <AddToListButton
                 slug={slug}
                 title={detail.title}
                 image={detail.image}
                 totalEpisodes={detail.episodes.length}
               />
+              {detail.malId && (
+                <a
+                  href={`https://myanimelist.net/anime/${detail.malId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2 glass rounded-full text-sm text-text-secondary hover:text-accent hover:border-accent/40 transition-colors"
+                >
+                  MyAnimeList
+                  {detail.malScore && (
+                    <span className="px-1.5 py-0.5 rounded bg-accent/15 text-accent text-xs font-semibold">
+                      {detail.malScore}
+                    </span>
+                  )}
+                </a>
+              )}
             </div>
 
             <div className="flex flex-wrap gap-2 mb-5">

@@ -13,6 +13,7 @@ function SearchContent() {
   const initialQuery = searchParams.get('q') || ''
   const [query, setQuery] = useState(initialQuery)
   const [animeResults, setAnimeResults] = useState<AnimeCard[]>([])
+  const [gogoResults, setGogoResults] = useState<AnimeCard[]>([])
   const [filmResults, setFilmResults] = useState<FilmCard[]>([])
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
@@ -22,7 +23,15 @@ function SearchContent() {
     if (!q) return
     setLoading(true)
     setSearched(true)
+    setGogoResults([])
     try {
+      // Gogoanime is a separate upstream with its own latency; it fills in when
+      // it gets there rather than holding the grid back.
+      fetch(`/api/gogo/search?q=${encodeURIComponent(q)}`)
+        .then((r) => r.json())
+        .then((json) => setGogoResults(json.data || []))
+        .catch(() => setGogoResults([]))
+
       const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`)
       const json = await res.json()
       setAnimeResults(json.data?.anime || [])
@@ -41,7 +50,7 @@ function SearchContent() {
     runSearch(initialQuery)
   }, [initialQuery, runSearch])
 
-  const totalResults = animeResults.length + filmResults.length
+  const totalResults = animeResults.length + gogoResults.length + filmResults.length
 
   return (
     <div className="pt-16 px-4 md:px-8 py-10 max-w-[1400px] mx-auto">
@@ -102,6 +111,18 @@ function SearchContent() {
             <section className="mb-10">
               <h2 className="rule-accent text-lg md:text-xl font-bold mb-5">Film &amp; Series</h2>
               <FilmGrid films={filmResults} />
+            </section>
+          )}
+
+          {gogoResults.length > 0 && (
+            <section className="mb-10">
+              <h2 className="rule-accent text-lg md:text-xl font-bold mb-5">
+                Gogoanime
+                <span className="ml-2 text-sm font-medium text-text-muted">
+                  external source
+                </span>
+              </h2>
+              <AnimeGrid animes={gogoResults} />
             </section>
           )}
 

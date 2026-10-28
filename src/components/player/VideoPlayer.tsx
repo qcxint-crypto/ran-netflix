@@ -7,16 +7,29 @@ import ServerSelector from './ServerSelector'
 export default function VideoPlayer({
   sources,
   poster,
+  note,
 }: {
   sources: StreamingSource[]
   poster?: string
+  note?: string
 }) {
   const [activeSource, setActiveSource] = useState(sources[0] || null)
 
   if (!activeSource) {
     return (
-      <div className="aspect-video glass rounded-2xl flex items-center justify-center">
-        <p className="text-text-secondary">Tidak ada sumber video tersedia</p>
+      <div className="aspect-video glass rounded-2xl flex flex-col items-center justify-center gap-3 px-6 text-center">
+        <div className="w-14 h-14 rounded-full glass flex items-center justify-center">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-text-muted" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+          </svg>
+        </div>
+        <p className="text-text-primary font-semibold">
+          {note || 'Tidak ada sumber video tersedia'}
+        </p>
+        <p className="text-xs text-text-secondary max-w-sm">
+          Semua provider yang dicek tidak menyediakan episode ini. Coba lagi nanti
+          atau buka episode lain.
+        </p>
       </div>
     )
   }

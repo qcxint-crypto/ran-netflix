@@ -22,6 +22,7 @@ export default function PosterCard({
   bottom,
   rating,
   priority = false,
+  external = false,
 }: {
   href: string
   image?: string
@@ -32,6 +33,8 @@ export default function PosterCard({
   bottom?: string
   rating?: string
   priority?: boolean
+  /** Opens on the provider's site in a new tab (results with no local page). */
+  external?: boolean
 }) {
   const cardRef = useRef<HTMLAnchorElement>(null)
   const styles = KIND_STYLES[kind]
@@ -70,6 +73,7 @@ export default function PosterCard({
     <Link
       ref={cardRef}
       href={href}
+      {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
       onPointerMove={handleMove}
       onPointerLeave={handleLeave}
       onBlur={handleLeave}
